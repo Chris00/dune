@@ -1075,12 +1075,13 @@ module Trace = struct
 
   let dump (trace : t) =
     let sexp =
-      Sexp.List (
+      Sexp.list (
         Hashtbl.fold trace ~init:Pmap.empty ~f:(fun ~key ~data acc ->
           Pmap.add acc ~key ~data)
         |> Path.Map.bindings
         |> List.map ~f:(fun (path, hash) ->
-          Sexp.List [ Atom (Path.to_string path); Atom (Digest.to_hex hash) ]))
+               Sexp.list [ Sexp.atom (Path.to_string path);
+                           Sexp.atom (Digest.to_hex hash) ]))
     in
     if Sys.file_exists "_build" then
       Io.write_file file (Sexp.to_string sexp)

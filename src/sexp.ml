@@ -5,9 +5,9 @@ include (Usexp : module type of struct include Usexp end
 
 let code_error message vars =
   code_errorf "%a" pp
-    (List (Atom message
+    (list (atom message
            :: List.map vars ~f:(fun (name, value) ->
-             List [Atom name; value])))
+             list [atom name; value])))
 
 let buf_len = 65_536
 
@@ -85,23 +85,24 @@ end
 
 module To_sexp = struct
   type nonrec 'a t = 'a -> t
-  let unit () = List []
-  let atom a = Atom a
-  let quoted_string s = Quoted_string s
-  let int n = Atom (string_of_int n)
-  let float f = Atom (string_of_float f)
-  let bool b = Atom (string_of_bool b)
-  let pair fa fb (a, b) = List [fa a; fb b]
-  let triple fa fb fc (a, b, c) = List [fa a; fb b; fc c]
-  let list f l = List (List.map l ~f)
-  let array f a = list f (Array.to_list a)
+  let unit () = list []
+  let atom = atom
+  let quoted_string = quoted_string
+  let int n = atom (string_of_int n)
+  let float f = atom (string_of_float f)
+  let bool b = atom (string_of_bool b)
+  let pair fa fb (a, b) = list [fa a; fb b]
+  let triple fa fb fc (a, b, c) = list [fa a; fb b; fc c]
   let option f = function
-    | None -> List []
-    | Some x -> List [f x]
+    | None -> list []
+    | Some x -> list [f x]
+  let record l =
+    list (List.map l ~f:(fun (n, v) -> list [atom n; v]))
+
+  let list f l = list (List.map l ~f)
+  let array f a = list f (Array.to_list a)
   let atom_set set = list atom (String_set.elements set)
   let atom_map f map = list (pair atom f) (String_map.bindings map)
-  let record l =
-    List (List.map l ~f:(fun (n, v) -> List [Atom n; v]))
   let atom_hashtbl f h =
     atom_map f
       (Hashtbl.fold h ~init:String_map.empty ~f:(fun ~key ~data acc ->
@@ -110,7 +111,7 @@ end
 
 module Of_sexp = struct
   type ast = Ast.t =
-    | Atom of Loc.t * string
+    | Atom of Loc.t * Atom.t
     | Quoted_string of Loc.t * string
     | List of Loc.t * ast list
 
@@ -136,8 +137,7 @@ module Of_sexp = struct
     | (Atom _ | List _) as sexp -> of_sexp_error sexp "Quoted_string expected"
 
   let string = function
-    | Atom (_, s) -> s
-    | Quoted_string (_, s) -> s
+    | Atom (_, s) | Quoted_string (_, s) -> s
     | List _ as sexp -> of_sexp_error sexp "Atom or quoted string expected"
 
   let int sexp = match sexp with
@@ -194,7 +194,7 @@ module Of_sexp = struct
     }
 
   module Name = struct
-    type t = string
+    type t = Atom.t
     let compare a b =
       let alen = String.length a and blen = String.length b in
       if alen < blen then
@@ -210,7 +210,7 @@ module Of_sexp = struct
   type record_parser_state =
     { loc      : Loc.t
     ; unparsed : unparsed_field Name_map.t
-    ; known    : string list
+    ; known    : Atom.t list
     }
 
   type 'a record_parser = record_parser_state -> 'a * record_parser_state
@@ -363,14 +363,14 @@ module Of_sexp = struct
 
   module Constructor_spec = struct
     type ('a, 'b, 'c) tuple =
-      { name : string
+      { name : Atom.t
       ; args : ('a, 'b) Constructor_args_spec.t
       ; rest : ('b, 'c) rest
       ; make : Loc.t -> 'a
       }
 
     type 'a record =
-      { name  : string
+      { name  : Atom.t
       ; parse : 'a record_parser
       }
 
@@ -410,9 +410,8 @@ module Of_sexp = struct
       of_sexp_errorf sexp
         "Unknown constructor %s%s" name
         (hint
-           (String.uncapitalize_ascii name)
-           (List.map cstrs ~f:(fun c ->
-              String.uncapitalize_ascii (C.name c))))
+           (Atom.uncapitalize name)
+           (List.map cstrs ~f:(fun c -> Atom.uncapitalize (C.name c))))
 
   let sum cstrs sexp =
     match sexp with
@@ -444,7 +443,6 @@ module Of_sexp = struct
         of_sexp_errorf sexp
           "Unknown value %s%s" s
           (hint
-             (String.uncapitalize_ascii s)
-             (List.map cstrs ~f:(fun (name, _) ->
-                String.uncapitalize_ascii name)))
+             (Atom.uncapitalize s)
+             (List.map cstrs ~f:(fun (name, _) -> Atom.uncapitalize name)))
 end

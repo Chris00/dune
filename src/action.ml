@@ -69,38 +69,41 @@ struct
   let rec sexp_of_t : _ -> Sexp.t =
     let path = Path.sexp_of_t and string = String.sexp_of_t in
     function
-    | Run (a, xs) -> List (Atom "run" :: Program.sexp_of_t a :: List.map xs ~f:string)
-    | Chdir (a, r) -> List [Atom "chdir" ; path a ; sexp_of_t r]
-    | Setenv (k, v, r) -> List [Atom "setenv" ; string k ; string v ; sexp_of_t r]
+    | Run (a, xs) -> Sexp.list (Sexp.atom "run" :: Program.sexp_of_t a
+                                :: List.map xs ~f:string)
+    | Chdir (a, r) -> Sexp.list [Sexp.atom "chdir" ; path a ; sexp_of_t r]
+    | Setenv (k, v, r) -> Sexp.list [Sexp.atom "setenv" ; string k ;
+                                     string v ; sexp_of_t r]
     | Redirect (outputs, fn, r) ->
-      List [ Atom (sprintf "with-%s-to" (Outputs.to_string outputs))
-           ; path fn
-           ; sexp_of_t r
-           ]
+       Sexp.list [ Sexp.atom (sprintf "with-%s-to" (Outputs.to_string outputs))
+                 ; path fn
+                 ; sexp_of_t r
+         ]
     | Ignore (outputs, r) ->
-      List [ Atom (sprintf "ignore-%s" (Outputs.to_string outputs))
-           ; sexp_of_t r
-           ]
-    | Progn l -> List (Atom "progn" :: List.map l ~f:sexp_of_t)
-    | Echo x -> List [Atom "echo"; string x]
-    | Cat x -> List [Atom "cat"; path x]
+       Sexp.list [ Sexp.atom (sprintf "ignore-%s" (Outputs.to_string outputs))
+                 ; sexp_of_t r
+                 ]
+    | Progn l -> Sexp.list (Sexp.atom "progn" :: List.map l ~f:sexp_of_t)
+    | Echo x -> Sexp.list [Sexp.atom "echo"; string x]
+    | Cat x -> Sexp.list [Sexp.atom "cat"; path x]
     | Copy (x, y) ->
-      List [Atom "copy"; path x; path y]
+       Sexp.list [Sexp.atom "copy"; path x; path y]
     | Symlink (x, y) ->
-      List [Atom "symlink"; path x; path y]
+       Sexp.list [Sexp.atom "symlink"; path x; path y]
     | Copy_and_add_line_directive (x, y) ->
-      List [Atom "copy#"; path x; path y]
-    | System x -> List [Atom "system"; string x]
-    | Bash   x -> List [Atom "bash"; string x]
-    | Write_file (x, y) -> List [Atom "write-file"; path x; string y]
-    | Rename (x, y) -> List [Atom "rename"; path x; path y]
-    | Remove_tree x -> List [Atom "remove-tree"; path x]
-    | Mkdir x       -> List [Atom "mkdir"; path x]
-    | Digest_files paths -> List [Atom "digest-files"; List (List.map paths ~f:path)]
+       Sexp.list [Sexp.atom "copy#"; path x; path y]
+    | System x -> Sexp.list [Sexp.atom "system"; string x]
+    | Bash   x -> Sexp.list [Sexp.atom "bash"; string x]
+    | Write_file (x, y) -> Sexp.list [Sexp.atom "write-file"; path x; string y]
+    | Rename (x, y) -> Sexp.list [Sexp.atom "rename"; path x; path y]
+    | Remove_tree x -> Sexp.list [Sexp.atom "remove-tree"; path x]
+    | Mkdir x       -> Sexp.list [Sexp.atom "mkdir"; path x]
+    | Digest_files paths -> Sexp.list [Sexp.atom "digest-files";
+                                       Sexp.list (List.map paths ~f:path)]
     | Diff { optional = false; file1; file2 } ->
-      List [Atom "diff"; path file1; path file2]
+       Sexp.list [Sexp.atom "diff"; path file1; path file2]
     | Diff { optional = true; file1; file2 } ->
-      List [Atom "diff?"; path file1; path file2]
+       Sexp.list [Sexp.atom "diff?"; path file1; path file2]
 
   let run prog args = Run (prog, args)
   let chdir path t = Chdir (path, t)
@@ -345,7 +348,7 @@ module Unexpanded = struct
       Loc.fail loc
         "(mkdir ...) is not supported for paths outside of the workspace:\n\
         \  %a\n"
-        Sexp.pp (List [Atom "mkdir"; Path.sexp_of_t path])
+        Sexp.pp (Sexp.list [Sexp.atom "mkdir"; Path.sexp_of_t path])
 
   module Partial = struct
     module Program = Unresolved.Program
@@ -602,7 +605,7 @@ module Promotion = struct
         Sexp.Of_sexp.of_sexp_errorf sexp "(<file> as <file>) expected"
 
     let sexp_of_t { src; dst } =
-      Sexp.List [Path.sexp_of_t src; Atom "as"; Path.sexp_of_t dst]
+      Sexp.list [Path.sexp_of_t src; Sexp.atom "as"; Path.sexp_of_t dst]
 
     let db : t list ref = ref []
 

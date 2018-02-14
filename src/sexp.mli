@@ -47,8 +47,8 @@ module To_sexp : sig
 end with type sexp := t
 
 module Of_sexp : sig
-  type ast = Ast.t =
-    | Atom of Loc.t * string
+  type ast = Ast.t = private
+    | Atom of Loc.t * Atom.t
     | Quoted_string of Loc.t * string
     | List of Loc.t * ast list
 
@@ -70,13 +70,13 @@ module Of_sexp : sig
   (** Return the location of the record being parsed *)
   val record_loc : Loc.t record_parser
 
-  val field   : string -> ?default:'a -> 'a t -> 'a record_parser
-  val field_o : string -> 'a t -> 'a option record_parser
-  val field_b : string -> bool record_parser
+  val field   : Atom.t -> ?default:'a -> 'a t -> 'a record_parser
+  val field_o : Atom.t -> 'a t -> 'a option record_parser
+  val field_b : Atom.t -> bool record_parser
 
   val map_validate : 'a record_parser -> f:('a -> ('b, string) result) -> 'b record_parser
 
-  val ignore_fields : string list -> unit record_parser
+  val ignore_fields : Atom.t list -> unit record_parser
 
   val record : 'a record_parser -> 'a t
 
@@ -94,24 +94,25 @@ module Of_sexp : sig
     -> ('b, 'c) Constructor_args_spec.t
     -> ('a -> 'b, 'c) Constructor_args_spec.t
 
-  val cstr : string -> ('a, 'b) Constructor_args_spec.t -> 'a -> 'b Constructor_spec.t
+  val cstr : Atom.t -> ('a, 'b) Constructor_args_spec.t -> 'a
+             -> 'b Constructor_spec.t
   val cstr_rest
-    :  string
+    :  Atom.t
     -> ('a, 'b list -> 'c) Constructor_args_spec.t
     -> 'b t
     -> 'a
     -> 'c Constructor_spec.t
 
-  val cstr_record : string -> 'a record_parser -> 'a Constructor_spec.t
+  val cstr_record : Atom.t -> 'a record_parser -> 'a Constructor_spec.t
 
   val cstr_loc
-    :  string
+    :  Atom.t
     -> ('a, 'b) Constructor_args_spec.t
     -> (Loc.t -> 'a)
     -> 'b Constructor_spec.t
 
   val cstr_rest_loc
-    :  string
+    :  Atom.t
     -> ('a, 'b list -> 'c) Constructor_args_spec.t
     -> 'b t
     -> (Loc.t -> 'a)
@@ -121,5 +122,5 @@ module Of_sexp : sig
     :  'a Constructor_spec.t list
     -> 'a t
 
-  val enum : (string * 'a) list -> 'a t
+  val enum : (Atom.t * 'a) list -> 'a t
 end

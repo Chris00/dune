@@ -2,16 +2,20 @@
 
 module Atom : sig
   type t = string
+  (** Acceptable atoms are composed of chars in the range [' ' .. '~']
+     and must be nonempty. *)
 
-  (** Whether the atom must be escaped when serialized *)
-  val must_escape : t -> bool
+  val valid : string -> bool
+  (** [valid s] checks that [s] respects the constraints to be an atom. *)
 
-  (** Escape all special characters in the atom *)
-  val escaped : t -> string
+  val of_string : string -> t
+  (** Convert a string to an atom.  If the string contains invalid
+     characters, raise [Invalid_argument]. *)
 
-  (** [serialize t] is the serialized representation of [t], so either
-      [t] either [escaped t] surrounded by double quotes. *)
-  val serialize : t -> string
+  val uncapitalize : t -> t
+  (** [uncapitalize s] make the first char of [s] lowercase. *)
+
+  val compare : t -> t -> int
 end
 
 module Loc : sig
@@ -21,11 +25,26 @@ module Loc : sig
     }
 end
 
-(** The S-expression type *)
-type t =
+(** The S-expression type.  An [Atom.t] value will necessarily satisfy
+   the predicate [Atom.valid]. *)
+type t = private
   | Atom of Atom.t
   | Quoted_string of string
   | List of t list
+
+val atom : string -> t
+(** [atom s] construct an atom from [s].
+    @raise Invalid_argument if [Atom.valid s] is [false].  *)
+
+val atom_of_int64 : Int64.t -> t
+
+val quoted_string : string -> t
+
+val atom_or_quoted_string : string -> t
+(** [atom_or_quoted_string s] returns an [Atom] if [s] is a valid atom
+   or a [Quoted_string] otherwise. *)
+
+val list : t list -> t
 
 (** Serialize a S-expression *)
 val to_string : t -> string

@@ -228,18 +228,18 @@ module Dep_conf = struct
       | Atom _ | Quoted_string _ -> File (String_with_vars.t sexp)
       | List _ -> t sexp
 
-  open Sexp
   let sexp_of_t = function
     | File t ->
-      List [Atom "file" ; String_with_vars.sexp_of_t t]
+       Sexp.list [Sexp.atom "file" ; String_with_vars.sexp_of_t t]
     | Alias t ->
-      List [Atom "alias" ; String_with_vars.sexp_of_t t]
+       Sexp.list [Sexp.atom "alias" ; String_with_vars.sexp_of_t t]
     | Alias_rec t ->
-      List [Atom "alias_rec" ; String_with_vars.sexp_of_t t]
+       Sexp.list [Sexp.atom "alias_rec" ; String_with_vars.sexp_of_t t]
     | Glob_files t ->
-      List [Atom "glob_files" ; String_with_vars.sexp_of_t t]
+       Sexp.list [Sexp.atom "glob_files" ; String_with_vars.sexp_of_t t]
     | Files_recursively_in t ->
-      List [Atom "files_recursively_in" ; String_with_vars.sexp_of_t t]
+       Sexp.list [Sexp.atom "files_recursively_in" ;
+                  String_with_vars.sexp_of_t t]
 end
 
 module Preprocess = struct

@@ -270,7 +270,7 @@ let of_string ?error_loc s =
       s
 
 let t sexp = of_string (Sexp.Of_sexp.string sexp) ~error_loc:(Sexp.Ast.loc sexp)
-let sexp_of_t t = Sexp.Atom (to_string t)
+let sexp_of_t t = Sexp.atom (to_string t)
 
 let absolute fn =
   if is_local fn then
@@ -424,7 +424,7 @@ let explode_exn t =
   else if is_local t then
     String.split t ~on:'/'
   else
-    Sexp.code_error "Path.explode_exn" ["path", Atom t]
+    Sexp.code_error "Path.explode_exn" ["path", Sexp.atom t]
 
 let exists t = Sys.file_exists (to_string t)
 let readdir t = Sys.readdir (to_string t) |> Array.to_list
@@ -457,8 +457,8 @@ let insert_after_build_dir_exn =
   let error a b =
     Sexp.code_error
       "Path.insert_after_build_dir_exn"
-      [ "path"  , Atom a
-      ; "insert", Atom b
+      [ "path"  , Sexp.atom a
+      ; "insert", Sexp.atom b
       ]
   in
   fun a b ->

@@ -25,7 +25,7 @@ module Display : sig
     | Quiet    (** Only display errors            *)
 
   val t : t Sexp.Of_sexp.t
-  val all : (string * t) list
+  val all : (Sexp.Atom.t * t) list
 end
 
 module type S = sig

@@ -83,9 +83,10 @@ module Gen(P : Params) = struct
              \n  %s\
              \n\
              \nThis will become an error in the future."
-            (Sexp.to_string (List [ Atom "modules_without_implementation"
-                                  ; Sexp.To_sexp.(list atom) should_be_listed
-                                  ]))
+            (Sexp.to_string
+               (Sexp.list [ Sexp.atom "modules_without_implementation"
+                          ; Sexp.To_sexp.(list atom) should_be_listed
+            ]))
         | Some loc ->
           Loc.warn loc
             "The following modules must be listed here as they don't \
@@ -844,8 +845,8 @@ module Gen(P : Params) = struct
         ~(scope : Lib_db.Scope.t With_required_by.t) =
     let stamp =
       let module S = Sexp.To_sexp in
-      Sexp.List
-        [ Atom "user-alias"
+      Sexp.list
+        [ Sexp.atom "user-alias"
         ; S.list   Jbuild.Dep_conf.sexp_of_t   alias_conf.deps
         ; S.option Action.Unexpanded.sexp_of_t alias_conf.action
         ]

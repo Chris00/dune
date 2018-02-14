@@ -965,10 +965,10 @@ module PP = struct
     let alias = Alias.lint ~dir in
     let add_alias fn build =
       Alias.add_action sctx.build_system alias build
-        ~stamp:(List [ Atom "lint"
-                     ; Sexp.To_sexp.(option atom) lib_name
-                     ; Atom fn
-                     ])
+        ~stamp:(Sexp.list [ Sexp.atom "lint"
+                          ; Sexp.To_sexp.(option atom) lib_name
+                          ; Sexp.atom fn
+                          ])
     in
     match Preprocess_map.find source.name lint with
     | No_preprocessing -> ()

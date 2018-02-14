@@ -63,7 +63,8 @@ let t : Sexp.Of_sexp.ast -> t = function
   | Atom(loc, s) -> { items = items_of_string s;  loc;  quoted = false }
   | Quoted_string (loc, s) ->
      { items = items_of_string s;  loc;  quoted = true }
-  | List _ as sexp -> Sexp.Of_sexp.of_sexp_error sexp "Atom expected"
+  | List _ as sexp ->
+     Sexp.Of_sexp.of_sexp_error sexp "Atom or quoted string expected"
 
 let loc t = t.loc
 
@@ -75,13 +76,12 @@ let virt_text pos s =
   { items = [Text s];  loc = Loc.of_pos pos;  quoted = true }
 
 let sexp_of_var_syntax = function
-  | Parens -> Sexp.Atom "parens"
-  | Braces -> Sexp.Atom "braces"
+  | Parens -> Sexp.atom "parens"
+  | Braces -> Sexp.atom "braces"
 
-let sexp_of_item =
-  let open Sexp in function
-    | Text s -> List [Atom "text" ; Atom s]
-    | Var (vs, s) -> List [sexp_of_var_syntax vs ; Atom s]
+let sexp_of_item = function
+  | Text s -> Sexp.list [Sexp.atom "text" ; Sexp.atom_or_quoted_string s]
+  | Var (vs, s) -> Sexp.list [sexp_of_var_syntax vs ; Sexp.atom s]
 
 let sexp_of_t t = Sexp.To_sexp.list sexp_of_item t.items
 

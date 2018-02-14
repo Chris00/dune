@@ -11,7 +11,7 @@ module Kind = struct
   type t = Default | Opam of Opam.t
 
   let sexp_of_t : t -> Sexp.t = function
-    | Default -> Atom "default"
+    | Default -> Sexp.atom "default"
     | Opam o  ->
       Sexp.To_sexp.(record [ "root"  , atom o.root
                            ; "switch", atom o.switch
@@ -109,7 +109,8 @@ let sexp_of_t t =
     ; "arch_sixtyfour", bool t.arch_sixtyfour
     ; "natdynlink_supported", bool t.natdynlink_supported
     ; "opam_vars", atom_hashtbl atom t.opam_var_cache
-    ; "ocamlc_config", list (pair atom atom) t.ocamlc_config
+    ; "ocamlc_config",
+      list (pair atom Sexp.atom_or_quoted_string) t.ocamlc_config
     ; "which", atom_hashtbl (option path) t.which_cache
     ]
 
