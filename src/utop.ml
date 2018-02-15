@@ -50,7 +50,8 @@ let utop_of_libs (libs : Library.t list) =
       { Buildable.
         loc = Loc.none
       ; modules =
-          Ordered_set_lang.t (List (Loc.none, [Atom (Loc.none, module_name)]))
+          Ordered_set_lang.t (Sexp.Ast.list Loc.none
+                                [Sexp.Ast.atom Loc.none module_name])
       ; modules_without_implementation = Ordered_set_lang.standard
       ; libraries =
           (Lib_dep.direct "utop") :: (List.map libs ~f:(fun lib ->

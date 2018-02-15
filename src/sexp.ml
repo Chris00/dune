@@ -24,11 +24,11 @@ let load ~fname ~mode =
 
 let load_many_as_one ~fname =
   match load ~fname ~mode:Many with
-  | [] -> Ast.List (Loc.in_file fname, [])
+  | [] -> Ast.list (Loc.in_file fname) []
   | x :: l ->
     let last = Option.value (List.last l) ~default:x in
     let loc = { (Ast.loc x) with stop = (Ast.loc last).stop } in
-    Ast.List (loc, x :: l)
+    Ast.list loc (x :: l)
 
 let ocaml_script_prefix = "(* -*- tuareg -*- *)"
 let ocaml_script_prefix_len = String.length ocaml_script_prefix
@@ -110,7 +110,7 @@ module To_sexp = struct
 end
 
 module Of_sexp = struct
-  type ast = Ast.t =
+  type ast = Ast.t = private
     | Atom of Loc.t * Atom.t
     | Quoted_string of Loc.t * string
     | List of Loc.t * ast list
@@ -428,7 +428,7 @@ module Of_sexp = struct
       | Atom (_, s) ->
         match find_cstr cstrs sexp s with
         | C.Tuple  t -> Constructor_args_spec.convert t.args t.rest sexp args (t.make loc)
-        | C.Record r -> record r.parse (List (loc, args))
+        | C.Record r -> record r.parse (Ast.list loc args)
 
   let enum cstrs sexp =
     match sexp with

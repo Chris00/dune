@@ -64,10 +64,17 @@ val prepare_formatter : Format.formatter -> unit
 (** Abstract syntax tree *)
 module Ast : sig
   type sexp = t
-  type t =
+  type t = private
     | Atom of Loc.t * Atom.t
     | Quoted_string of Loc.t * string
     | List of Loc.t * t list
+
+  val atom : Loc.t -> string -> t
+  (** [atom loc s] construct an [Atom] from [s].
+      @raise Invalid_argument if [s] does not satisfy [Atom.valid s]. *)
+
+  val list : Loc.t -> t list -> t
+  (** [list loc l] construct a sexp from a list of sexp.  *)
 
   val loc : t -> Loc.t
 

@@ -234,6 +234,12 @@ module Ast = struct
     | Quoted_string of Loc.t * string
     | List of Loc.t * t list
 
+  let atom loc s =
+    if Atom.valid s then Atom(loc, s)
+    else invalid_arg "Usexp.Ast.atom"
+
+  let list loc l = List (loc, l)
+
   let loc (Atom (loc, _) | Quoted_string (loc, _) | List (loc, _)) = loc
 
   let rec remove_locs : t -> sexp = function
