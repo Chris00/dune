@@ -66,44 +66,63 @@ struct
       ]
       sexp
 
+  (* Define Atom constants *)
+  let atom_run = Sexp.atom_of_string "run"
+  let atom_chdir = Sexp.atom_of_string "chdir"
+  let atom_setenv = Sexp.atom_of_string "setenv"
+  let atom_progn = Sexp.atom_of_string "progn"
+  let atom_echo = Sexp.atom_of_string "echo"
+  let atom_copy = Sexp.atom_of_string "copy"
+  let atom_symlink = Sexp.atom_of_string "symlink"
+  let atom_copyhash = Sexp.atom_of_string "copy#"
+  let atom_system = Sexp.atom_of_string "system"
+  let atom_bash = Sexp.atom_of_string "bash"
+  let atom_write_file = Sexp.atom_of_string "write-file"
+  let atom_rename = Sexp.atom_of_string "rename"
+  let atom_remove_tree = Sexp.atom_of_string "remove-tree"
+  let atom_mkdir = Sexp.atom_of_string "mkdir"
+  let atom_digest_files = Sexp.atom_of_string "digest-files"
+  let atom_diff = Sexp.atom_of_string "diff"
+  let atom_diff_question = Sexp.atom_of_string "diff?"
+
   let rec sexp_of_t : _ -> Sexp.t =
     let path = Path.sexp_of_t and string = String.sexp_of_t in
     function
-    | Run (a, xs) -> Sexp.list (Sexp.atom "run" :: Program.sexp_of_t a
+    | Run (a, xs) -> Sexp.list (atom_run :: Program.sexp_of_t a
                                 :: List.map xs ~f:string)
-    | Chdir (a, r) -> Sexp.list [Sexp.atom "chdir" ; path a ; sexp_of_t r]
-    | Setenv (k, v, r) -> Sexp.list [Sexp.atom "setenv" ; string k ;
+    | Chdir (a, r) -> Sexp.list [atom_chdir ; path a ; sexp_of_t r]
+    | Setenv (k, v, r) -> Sexp.list [atom_setenv ; string k ;
                                      string v ; sexp_of_t r]
     | Redirect (outputs, fn, r) ->
-       Sexp.list [ Sexp.atom (sprintf "with-%s-to" (Outputs.to_string outputs))
+       Sexp.list [ Sexp.atom_or_quoted_string
+                     (sprintf "with-%s-to" (Outputs.to_string outputs))
                  ; path fn
                  ; sexp_of_t r
          ]
     | Ignore (outputs, r) ->
-       Sexp.list [ Sexp.atom (sprintf "ignore-%s" (Outputs.to_string outputs))
+       Sexp.list [ Sexp.atom_or_quoted_string
+                     (sprintf "ignore-%s" (Outputs.to_string outputs))
                  ; sexp_of_t r
                  ]
-    | Progn l -> Sexp.list (Sexp.atom "progn" :: List.map l ~f:sexp_of_t)
-    | Echo x -> Sexp.list [Sexp.atom "echo"; string x]
-    | Cat x -> Sexp.list [Sexp.atom "cat"; path x]
-    | Copy (x, y) ->
-       Sexp.list [Sexp.atom "copy"; path x; path y]
-    | Symlink (x, y) ->
-       Sexp.list [Sexp.atom "symlink"; path x; path y]
+    | Progn l -> Sexp.list (atom_progn :: List.map l ~f:sexp_of_t)
+    | Echo x -> Sexp.list [atom_echo; string x]
+    | Cat x -> Sexp.list [Sexp.atom_of_string "cat"; path x]
+    | Copy (x, y) -> Sexp.list [atom_copy; path x; path y]
+    | Symlink (x, y) -> Sexp.list [atom_symlink; path x; path y]
     | Copy_and_add_line_directive (x, y) ->
-       Sexp.list [Sexp.atom "copy#"; path x; path y]
-    | System x -> Sexp.list [Sexp.atom "system"; string x]
-    | Bash   x -> Sexp.list [Sexp.atom "bash"; string x]
-    | Write_file (x, y) -> Sexp.list [Sexp.atom "write-file"; path x; string y]
-    | Rename (x, y) -> Sexp.list [Sexp.atom "rename"; path x; path y]
-    | Remove_tree x -> Sexp.list [Sexp.atom "remove-tree"; path x]
-    | Mkdir x       -> Sexp.list [Sexp.atom "mkdir"; path x]
-    | Digest_files paths -> Sexp.list [Sexp.atom "digest-files";
+       Sexp.list [atom_copyhash; path x; path y]
+    | System x -> Sexp.list [atom_system; string x]
+    | Bash   x -> Sexp.list [atom_bash; string x]
+    | Write_file (x, y) -> Sexp.list [atom_write_file; path x; string y]
+    | Rename (x, y) -> Sexp.list [atom_rename; path x; path y]
+    | Remove_tree x -> Sexp.list [atom_remove_tree; path x]
+    | Mkdir x       -> Sexp.list [atom_mkdir; path x]
+    | Digest_files paths -> Sexp.list [atom_digest_files;
                                        Sexp.list (List.map paths ~f:path)]
     | Diff { optional = false; file1; file2 } ->
-       Sexp.list [Sexp.atom "diff"; path file1; path file2]
+       Sexp.list [atom_diff; path file1; path file2]
     | Diff { optional = true; file1; file2 } ->
-       Sexp.list [Sexp.atom "diff?"; path file1; path file2]
+       Sexp.list [atom_diff_question; path file1; path file2]
 
   let run prog args = Run (prog, args)
   let chdir path t = Chdir (path, t)
@@ -183,7 +202,7 @@ module Prog = struct
 
   let sexp_of_t = function
     | Ok s -> Path.sexp_of_t s
-    | Error (e : Not_found.t) -> Sexp.To_sexp.atom e.program
+    | Error (e : Not_found.t) -> Sexp.atom_or_quoted_string e.program
 end
 
 module type Ast = Action_intf.Ast
@@ -195,7 +214,7 @@ module rec Ast : Ast = Ast
 module String_with_sexp = struct
   type t = string
   let t = Sexp.Of_sexp.string
-  let sexp_of_t = Sexp.To_sexp.atom
+  let sexp_of_t = Sexp.atom_of_string
 end
 
 include Make_ast
@@ -348,7 +367,7 @@ module Unexpanded = struct
       Loc.fail loc
         "(mkdir ...) is not supported for paths outside of the workspace:\n\
         \  %a\n"
-        Sexp.pp (Sexp.list [Sexp.atom "mkdir"; Path.sexp_of_t path])
+        Sexp.pp (Sexp.list [Sexp.atom_of_string "mkdir"; Path.sexp_of_t path])
 
   module Partial = struct
     module Program = Unresolved.Program
@@ -597,7 +616,7 @@ module Promotion = struct
       }
 
     let t = function
-      | Sexp.Ast.List (_, [src; Atom (_, "as"); dst]) ->
+      | Sexp.Ast.List (_, [src; Atom (_, A "as"); dst]) ->
         { src = Path.t src
         ; dst = Path.t dst
         }
@@ -605,7 +624,8 @@ module Promotion = struct
         Sexp.Of_sexp.of_sexp_errorf sexp "(<file> as <file>) expected"
 
     let sexp_of_t { src; dst } =
-      Sexp.list [Path.sexp_of_t src; Sexp.atom "as"; Path.sexp_of_t dst]
+      Sexp.list [Path.sexp_of_t src; Sexp.atom_of_string "as";
+                 Path.sexp_of_t dst]
 
     let db : t list ref = ref []
 

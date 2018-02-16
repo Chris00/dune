@@ -60,7 +60,7 @@ let rec of_tokens : Token.t list -> item list = function
 let items_of_string s = of_tokens (Token.tokenise s)
 
 let t : Sexp.Of_sexp.ast -> t = function
-  | Atom(loc, s) -> { items = items_of_string s;  loc;  quoted = false }
+  | Atom(loc, A s) -> { items = items_of_string s;  loc;  quoted = false }
   | Quoted_string (loc, s) ->
      { items = items_of_string s;  loc;  quoted = true }
   | List _ as sexp ->
@@ -76,12 +76,13 @@ let virt_text pos s =
   { items = [Text s];  loc = Loc.of_pos pos;  quoted = true }
 
 let sexp_of_var_syntax = function
-  | Parens -> Sexp.atom "parens"
-  | Braces -> Sexp.atom "braces"
+  | Parens -> Sexp.atom_of_string "parens"
+  | Braces -> Sexp.atom_of_string "braces"
 
 let sexp_of_item = function
-  | Text s -> Sexp.list [Sexp.atom "text" ; Sexp.atom_or_quoted_string s]
-  | Var (vs, s) -> Sexp.list [sexp_of_var_syntax vs ; Sexp.atom s]
+  | Text s -> Sexp.list [Sexp.atom_of_string "text" ;
+                         Sexp.atom_or_quoted_string s]
+  | Var (vs, s) -> Sexp.list [sexp_of_var_syntax vs ; Sexp.atom_of_string s]
 
 let sexp_of_t t = Sexp.To_sexp.list sexp_of_item t.items
 

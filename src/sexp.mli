@@ -2,6 +2,8 @@ open Import
 
 include module type of struct include Usexp end with module Loc := Usexp.Loc
 
+module Atom_map : Map.S with type key = Atom.t
+
 val code_error : string -> (string * t) list -> _
 
 val load : fname:string -> mode:'a Parser.Mode.t -> 'a
@@ -16,8 +18,12 @@ val load_many_or_ocaml_script : string -> sexps_or_ocaml_script
 module type Combinators = sig
   type 'a t
   val unit       : unit                      t
-  val atom       : string                    t
+  val atom       : Atom.t                    t
   val quoted_string : string                 t
+
+  val string     : string                    t
+  (** Conversion between strings and Atom or quoted strings *)
+
   val int        : int                       t
   val float      : float                     t
   val bool       : bool                      t
@@ -43,6 +49,9 @@ module To_sexp : sig
   type sexp = t
   include Combinators with type 'a t = 'a -> t
 
+  val atom_of_string : string t
+  (** Alias for {!Sexp.atom_of_string}. *)
+
   val record : (string * sexp) list -> sexp
 end with type sexp := t
 
@@ -54,7 +63,7 @@ module Of_sexp : sig
 
   include Combinators with type 'a t = Ast.t -> 'a
 
-  val string : Ast.t -> string
+  val string : string t
   (** Convert and [Atom] or a [Quoted_string] to s string. *)
 
   val of_sexp_error  : Ast.t -> string -> _
@@ -70,9 +79,9 @@ module Of_sexp : sig
   (** Return the location of the record being parsed *)
   val record_loc : Loc.t record_parser
 
-  val field   : Atom.t -> ?default:'a -> 'a t -> 'a record_parser
-  val field_o : Atom.t -> 'a t -> 'a option record_parser
-  val field_b : Atom.t -> bool record_parser
+  val field   : string -> ?default:'a -> 'a t -> 'a record_parser
+  val field_o : string -> 'a t -> 'a option record_parser
+  val field_b : string -> bool record_parser
 
   val map_validate : 'a record_parser -> f:('a -> ('b, string) result) -> 'b record_parser
 
@@ -94,25 +103,25 @@ module Of_sexp : sig
     -> ('b, 'c) Constructor_args_spec.t
     -> ('a -> 'b, 'c) Constructor_args_spec.t
 
-  val cstr : Atom.t -> ('a, 'b) Constructor_args_spec.t -> 'a
+  val cstr : string -> ('a, 'b) Constructor_args_spec.t -> 'a
              -> 'b Constructor_spec.t
   val cstr_rest
-    :  Atom.t
+    :  string
     -> ('a, 'b list -> 'c) Constructor_args_spec.t
     -> 'b t
     -> 'a
     -> 'c Constructor_spec.t
 
-  val cstr_record : Atom.t -> 'a record_parser -> 'a Constructor_spec.t
+  val cstr_record : string -> 'a record_parser -> 'a Constructor_spec.t
 
   val cstr_loc
-    :  Atom.t
+    :  string
     -> ('a, 'b) Constructor_args_spec.t
     -> (Loc.t -> 'a)
     -> 'b Constructor_spec.t
 
   val cstr_rest_loc
-    :  Atom.t
+    :  string
     -> ('a, 'b list -> 'c) Constructor_args_spec.t
     -> 'b t
     -> (Loc.t -> 'a)
@@ -123,4 +132,6 @@ module Of_sexp : sig
     -> 'a t
 
   val enum : (Atom.t * 'a) list -> 'a t
+
+  val hint : Atom.t -> Atom.t list -> string
 end

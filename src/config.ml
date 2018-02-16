@@ -35,7 +35,7 @@ module Display = struct
       ; "quiet"    , Quiet
       ]
 
-  let t = enum all
+  let t = enum (List.map ~f:(fun (k,v) -> (Sexp.Atom.of_string k, v)) all)
 end
 
 module type S = sig

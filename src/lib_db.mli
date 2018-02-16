@@ -31,7 +31,8 @@ module Scope : sig
   val root : t -> Path.t
   val name : t -> string
 
-  val resolve : t With_required_by.t -> string -> (Package.t, string) result
+  val resolve : t With_required_by.t -> Sexp.Atom.t ->
+                (Package.t, string) result
 
   val required_in_jbuild : t -> jbuild_dir:Path.t -> t With_required_by.t
 

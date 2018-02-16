@@ -41,9 +41,9 @@ let utop_of_libs (libs : Library.t list) =
   ; link_executables = true
   ; link_flags = Ordered_set_lang.Unexpanded.t (
       Sexp.add_loc ~loc:Loc.none
-        (Sexp.list [ Sexp.atom "-linkall"
-                   ; Sexp.atom "-warn-error"
-                   ; Sexp.atom "-31" ])
+        (Sexp.list [ Sexp.atom_of_string "-linkall"
+                   ; Sexp.atom_of_string "-warn-error"
+                   ; Sexp.atom_of_string "-31" ])
     )
   ; modes = Mode.Dict.Set.of_list [Mode.Byte]
   ; buildable =

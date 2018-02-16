@@ -111,7 +111,7 @@ let create
       (struct type t = Lib.t list end)
       (struct
         open Sexp.To_sexp
-        let t _dir l = list atom (List.map l ~f:Lib.best_name)
+        let t _dir l = list atom_of_string (List.map l ~f:Lib.best_name)
       end)
       (struct
         open Sexp.Of_sexp
@@ -439,7 +439,7 @@ module Pkg_version = struct
 
   module V = Vfile_kind.Make(struct type t = string option end)
       (functor (C : Sexp.Combinators) -> struct
-        let t = C.option C.atom
+        let t = C.option C.string
       end)
 
   let spec sctx (p : Package.t) =
@@ -589,7 +589,7 @@ module Action = struct
                isn't really required here, but optional *)
             Lib_db.Scope.lib_is_available scope lib)))
         | Some ("version", s) -> begin
-            match Lib_db.Scope.resolve scope s with
+            match Lib_db.Scope.resolve scope (Sexp.Atom.of_string s) with
             | Ok p ->
               let x =
                 Pkg_version.read sctx p >>^ function
@@ -965,9 +965,9 @@ module PP = struct
     let alias = Alias.lint ~dir in
     let add_alias fn build =
       Alias.add_action sctx.build_system alias build
-        ~stamp:(Sexp.list [ Sexp.atom "lint"
-                          ; Sexp.To_sexp.(option atom) lib_name
-                          ; Sexp.atom fn
+        ~stamp:(Sexp.list [ Sexp.atom_of_string "lint"
+                          ; Sexp.To_sexp.(option string) lib_name
+                          ; Sexp.atom_or_quoted_string fn
                           ])
     in
     match Preprocess_map.find source.name lint with

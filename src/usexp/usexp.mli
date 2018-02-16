@@ -1,7 +1,7 @@
 (** Parsing of s-expressions *)
 
 module Atom : sig
-  type t = string
+  type t = private A of string [@@unboxed]
   (** Acceptable atoms are composed of chars in the range [' ' .. '~']
      and must be nonempty. *)
 
@@ -16,6 +16,8 @@ module Atom : sig
   (** [uncapitalize s] make the first char of [s] lowercase. *)
 
   val compare : t -> t -> int
+
+  val of_string_unsafe : string -> t
 end
 
 module Loc : sig
@@ -25,15 +27,17 @@ module Loc : sig
     }
 end
 
-(** The S-expression type.  An [Atom.t] value will necessarily satisfy
-   the predicate [Atom.valid]. *)
+(** The S-expression type.  Having an [Atom s] value will imply that
+   [Atom.valid s] holds. *)
 type t = private
   | Atom of Atom.t
   | Quoted_string of string
   | List of t list
 
-val atom : string -> t
-(** [atom s] construct an atom from [s].
+val atom : Atom.t -> t
+
+val atom_of_string : string -> t
+(** [atom_of_string s] construct an atom from [s].
     @raise Invalid_argument if [Atom.valid s] is [false].  *)
 
 val atom_of_int64 : Int64.t -> t
@@ -82,7 +86,7 @@ module Ast : sig
 
   module Token : sig
     type t =
-      | Atom   of Loc.t * string
+      | Atom   of Loc.t * Atom.t
       | String of Loc.t * string
       | Lparen of Loc.t
       | Rparen of Loc.t

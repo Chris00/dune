@@ -3,11 +3,13 @@ open Import
 include (Usexp : module type of struct include Usexp end
          with module Loc := Usexp.Loc)
 
+module Atom_map = Map.Make(Atom)
+
 let code_error message vars =
   code_errorf "%a" pp
-    (list (atom message
+    (list (quoted_string message
            :: List.map vars ~f:(fun (name, value) ->
-             list [atom name; value])))
+             list [atom_of_string name; value])))
 
 let buf_len = 65_536
 
@@ -68,8 +70,9 @@ let load_many_or_ocaml_script fname =
 module type Combinators = sig
   type 'a t
   val unit       : unit                      t
-  val atom       : string                    t
+  val atom       : Atom.t                    t
   val quoted_string : string                 t
+  val string     : string                    t
   val int        : int                       t
   val float      : float                     t
   val bool       : bool                      t
@@ -86,23 +89,25 @@ end
 module To_sexp = struct
   type nonrec 'a t = 'a -> t
   let unit () = list []
-  let atom = atom
+  let atom a = atom a
   let quoted_string = quoted_string
-  let int n = atom (string_of_int n)
-  let float f = atom (string_of_float f)
-  let bool b = atom (string_of_bool b)
+  let atom_of_string = atom_of_string
+  let string = atom_or_quoted_string
+  let int n = atom_of_string (string_of_int n)
+  let float f = atom_of_string (string_of_float f)
+  let bool b = atom_of_string (string_of_bool b)
   let pair fa fb (a, b) = list [fa a; fb b]
   let triple fa fb fc (a, b, c) = list [fa a; fb b; fc c]
   let option f = function
     | None -> list []
     | Some x -> list [f x]
   let record l =
-    list (List.map l ~f:(fun (n, v) -> list [atom n; v]))
+    list (List.map l ~f:(fun (n, v) -> list [atom_of_string n; v]))
 
   let list f l = list (List.map l ~f)
   let array f a = list f (Array.to_list a)
-  let atom_set set = list atom (String_set.elements set)
-  let atom_map f map = list (pair atom f) (String_map.bindings map)
+  let atom_set set = list atom_of_string (String_set.elements set)
+  let atom_map f map = list (pair atom_of_string f) (String_map.bindings map)
   let atom_hashtbl f h =
     atom_map f
       (Hashtbl.fold h ~init:String_map.empty ~f:(fun ~key ~data acc ->
@@ -137,22 +142,22 @@ module Of_sexp = struct
     | (Atom _ | List _) as sexp -> of_sexp_error sexp "Quoted_string expected"
 
   let string = function
-    | Atom (_, s) | Quoted_string (_, s) -> s
+    | Atom (_, A s) | Quoted_string (_, s) -> s
     | List _ as sexp -> of_sexp_error sexp "Atom or quoted string expected"
 
   let int sexp = match sexp with
-    | Atom (_, s) -> (try int_of_string s
-                      with _ -> of_sexp_error sexp "Integer expected")
+    | Atom (_, A s) -> (try int_of_string s
+                        with _ -> of_sexp_error sexp "Integer expected")
     | _ -> of_sexp_error sexp "Integer expected"
 
   let float sexp = match sexp with
-    | Atom (_, s) -> (try float_of_string s
+    | Atom (_, A s) -> (try float_of_string s
                       with _ -> of_sexp_error sexp "Float expected")
     | _ -> of_sexp_error sexp "Float expected"
 
   let bool = function
-    | Atom (_, "true") -> true
-    | Atom (_, "false") -> false
+    | Atom (_, A "true") -> true
+    | Atom (_, A "false") -> false
     | sexp -> of_sexp_error sexp "'true' or 'false' expected"
 
   let pair fa fb = function
@@ -195,8 +200,9 @@ module Of_sexp = struct
 
   module Name = struct
     type t = Atom.t
-    let compare a b =
-      let alen = String.length a and blen = String.length b in
+    let compare (A a: t) (A b: t) =
+      let alen = String.length (a :> string)
+      and blen = String.length (b :> string) in
       if alen < blen then
         -1
       else if alen > blen then
@@ -206,6 +212,9 @@ module Of_sexp = struct
   end
 
   module Name_map = Map.Make(Name)
+
+  let hint (Atom.A name) candidates =
+    hint name (List.map ~f:(fun (Atom.A s) -> s) candidates)
 
   type record_parser_state =
     { loc      : Loc.t
@@ -267,27 +276,30 @@ module Of_sexp = struct
       in
       Loc.fail loc "%s" msg
 
-  let field name ?default value_of_sexp state =
+  let field sname ?default value_of_sexp state =
+    let name = Atom.of_string sname in
     match Name_map.find name state.unparsed with
     | Some { value = Some value; _ } ->
       (value_of_sexp value, consume name state)
     | Some { value = None; _ } ->
-      Loc.fail state.loc "field %s needs a value" name
+      Loc.fail state.loc "field %s needs a value" sname
     | None ->
       match default with
       | Some v -> (v, add_known name state)
       | None ->
-        Loc.fail state.loc "field %s missing" name
+        Loc.fail state.loc "field %s missing" sname
 
-  let field_o name value_of_sexp state =
+  let field_o sname value_of_sexp state =
+    let name = Atom.of_string sname in
     match Name_map.find name state.unparsed with
     | Some { value = Some value; _ } ->
       (Some (value_of_sexp value), consume name state)
     | Some { value = None; _ } ->
-      Loc.fail state.loc "field %s needs a value" name
+      Loc.fail state.loc "field %s needs a value" sname
     | None -> (None, add_known name state)
 
-  let field_b name state =
+  let field_b sname state =
+    let name = Atom.of_string sname in
     match Name_map.find name state.unparsed with
     | Some { value = Some value; _ } ->
       (bool value, consume name state)
@@ -311,7 +323,7 @@ module Of_sexp = struct
                  Name_map.add acc ~key:name ~data:{ value = Some value;
                                                     entry = sexp }
               | List _ | Quoted_string _ ->
-                of_sexp_error name_sexp "Atom expected"
+                 of_sexp_error name_sexp "Atom expected"
             end
           | _ ->
             of_sexp_error sexp "S-expression of the form (_ _) expected")
@@ -327,14 +339,15 @@ module Of_sexp = struct
     if Name_map.is_empty state.unparsed then
       v
     else
-      let name, { entry; _ } = Name_map.choose state.unparsed in
+      let (Atom.A sname as name), { entry; _ } =
+        Name_map.choose state.unparsed in
       let name_sexp =
         match entry with
         | List (_, s :: _) -> s
         | _ -> assert false
       in
       of_sexp_errorf name_sexp
-        "Unknown field %s%s" name (hint name state.known)
+        "Unknown field %s%s" sname (hint name state.known)
 
   type ('a, 'b) rest =
     | No_rest : ('a, 'a) rest
@@ -385,12 +398,12 @@ module Of_sexp = struct
   module C = Constructor_spec
 
   let cstr_loc name args make =
-    C.Tuple { name; args; make; rest = No_rest }
+    C.Tuple { name = Atom.of_string name; args; make; rest = No_rest }
   let cstr_rest_loc name args rest make =
-    C.Tuple { name; args; make; rest = Many rest }
+    C.Tuple { name= Atom.of_string name; args; make; rest = Many rest }
 
   let cstr_record name parse =
-    C.Record { name; parse }
+    C.Record { name= Atom.of_string name; parse }
 
   let cstr name args make =
     cstr_loc name args (fun _ -> make)
@@ -400,7 +413,7 @@ module Of_sexp = struct
 
   let equal_cstr_name a b = Name.compare a b = 0
 
-  let find_cstr cstrs sexp name =
+  let find_cstr cstrs sexp (Atom.A sname as name) =
     match
       List.find cstrs ~f:(fun cstr ->
         equal_cstr_name (C.name cstr) name)
@@ -408,7 +421,7 @@ module Of_sexp = struct
     | Some cstr -> cstr
     | None ->
       of_sexp_errorf sexp
-        "Unknown constructor %s%s" name
+        "Unknown constructor %s%s" sname
         (hint
            (Atom.uncapitalize name)
            (List.map cstrs ~f:(fun c -> Atom.uncapitalize (C.name c))))
@@ -433,16 +446,16 @@ module Of_sexp = struct
   let enum cstrs sexp =
     match sexp with
     | Quoted_string _ | List _ -> of_sexp_error sexp "Atom expected"
-    | Atom (_, s) ->
-      match
+    | Atom (_, (A s as a)) ->
+       match
         List.find cstrs ~f:(fun (name, _) ->
-          equal_cstr_name name s)
+          equal_cstr_name name a)
       with
       | Some (_, value) -> value
       | None ->
         of_sexp_errorf sexp
           "Unknown value %s%s" s
           (hint
-             (Atom.uncapitalize s)
+             (Atom.uncapitalize a)
              (List.map cstrs ~f:(fun (name, _) -> Atom.uncapitalize name)))
 end

@@ -84,8 +84,8 @@ module Gen(P : Params) = struct
              \n\
              \nThis will become an error in the future."
             (Sexp.to_string
-               (Sexp.list [ Sexp.atom "modules_without_implementation"
-                          ; Sexp.To_sexp.(list atom) should_be_listed
+               (Sexp.list [ Sexp.atom_of_string "modules_without_implementation"
+                          ; Sexp.To_sexp.(list string) should_be_listed
             ]))
         | Some loc ->
           Loc.warn loc
@@ -846,7 +846,7 @@ module Gen(P : Params) = struct
     let stamp =
       let module S = Sexp.To_sexp in
       Sexp.list
-        [ Sexp.atom "user-alias"
+        [ Sexp.atom_of_string "user-alias"
         ; S.list   Jbuild.Dep_conf.sexp_of_t   alias_conf.deps
         ; S.option Action.Unexpanded.sexp_of_t alias_conf.action
         ]

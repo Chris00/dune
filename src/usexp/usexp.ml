@@ -13,7 +13,7 @@ end
 module A = Parser_automaton_internal
 
 module Atom = struct
-  type t = string
+  type t = Sexp_ast.atom = A of string [@@unboxed]
 
   let valid s =
     if s = "" then false
@@ -28,33 +28,37 @@ module Atom = struct
       with Exit -> false
 
   let of_string s =
-    if valid s then s
+    if valid s then A s
     else invalid_arg "Usexp.Atom.of_string"
 
-  let compare = String.compare
+  let of_string_unsafe s = A s
+
+  let compare (A x) (A y) = String.compare x y
 
   [@@@warning "-3"]
-  let uncapitalize = String.uncapitalize
+  let uncapitalize (A s) = A(String.uncapitalize s)
 end
 
 type t =
-  | Atom of string
+  | Atom of Atom.t
   | Quoted_string of string
   | List of t list
 
 type sexp = t
 
-let atom s =
-  if Atom.valid s then Atom s
+let atom a = Atom a
+
+let atom_of_string s =
+  if Atom.valid s then Atom (A s)
   else invalid_arg(Printf.sprintf "Usexp.atom: %S contains invalid \
                                    characters" s)
 
-let atom_of_int64 i = Atom(Int64.to_string i) (* no validity test needed *)
+let atom_of_int64 i = Atom(A(Int64.to_string i)) (* no validity test needed *)
 
 let quoted_string s = Quoted_string s
 
 let atom_or_quoted_string s =
-  if Atom.valid s then Atom s
+  if Atom.valid s then Atom (A s)
   else Quoted_string s
 
 let list l = List l
@@ -120,12 +124,12 @@ let quoted s =
   Bytes.unsafe_to_string s'
 
 let rec to_string = function
-  | Atom s -> s
+  | Atom (A s) -> s
   | Quoted_string s -> quoted s
   | List l -> Printf.sprintf "(%s)" (List.map l ~f:to_string |> String.concat ~sep:" ")
 
 let rec pp ppf = function
-  | Atom s ->
+  | Atom (A s) ->
     Format.pp_print_string ppf s
   | Quoted_string s ->
     Format.pp_print_string ppf (quoted s)
@@ -167,7 +171,7 @@ let pp_print_quoted_string ppf s =
     Format.pp_print_string ppf (quoted s)
 
 let rec pp_split_strings ppf = function
-  | Atom s -> Format.pp_print_string ppf s
+  | Atom (A s) -> Format.pp_print_string ppf s
   | Quoted_string s -> pp_print_quoted_string ppf s
   | List [] ->
     Format.pp_print_string ppf "()"
@@ -230,12 +234,12 @@ module Loc = Sexp_ast.Loc
 
 module Ast = struct
   type t = Sexp_ast.t =
-    | Atom of Loc.t * string
+    | Atom of Loc.t * Atom.t
     | Quoted_string of Loc.t * string
     | List of Loc.t * t list
 
   let atom loc s =
-    if Atom.valid s then Atom(loc, s)
+    if Atom.valid s then Atom(loc, A s)
     else invalid_arg "Usexp.Ast.atom"
 
   let list loc l = List (loc, l)
@@ -249,7 +253,7 @@ module Ast = struct
 
   module Token = struct
     type t =
-      | Atom   of Loc.t * string
+      | Atom   of Loc.t * Atom.t
       | String of Loc.t * string
       | Lparen of Loc.t
       | Rparen of Loc.t

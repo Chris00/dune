@@ -184,8 +184,8 @@ module Cached_digest = struct
           Pmap.add acc ~key ~data)
         |> Path.Map.bindings
         |> List.map ~f:(fun (path, file) ->
-          Sexp.list [ Sexp.atom (Path.to_string path)
-                    ; Sexp.atom (Digest.to_hex file.digest)
+          Sexp.list [ Sexp.atom_or_quoted_string (Path.to_string path)
+                    ; Sexp.atom_of_string (Digest.to_hex file.digest)
                     ; Sexp.atom_of_int64 (Int64.bits_of_float file.timestamp)
                     ]))
     in

@@ -13,7 +13,7 @@ module Scope : sig
   type t =
     { name     : string option (** First package name in alphabetical order.  [None] for
                                    the global scope. *)
-    ; packages : Package.t String_map.t
+    ; packages : Package.t Sexp.Atom_map.t
     ; root     : Path.t
     }
 
@@ -23,7 +23,7 @@ module Scope : sig
 
   (** [resolve t package_name] looks up [package_name] in [t] and returns the
       package description if it exists, otherwise it returns an error. *)
-  val resolve : t -> string -> (Package.t, string) result
+  val resolve : t -> Sexp.Atom.t -> (Package.t, string) result
 end
 
 (** Ppx preprocessors  *)

@@ -11,10 +11,10 @@ module Kind = struct
   type t = Default | Opam of Opam.t
 
   let sexp_of_t : t -> Sexp.t = function
-    | Default -> Sexp.atom "default"
+    | Default -> Sexp.atom_of_string "default"
     | Opam o  ->
-      Sexp.To_sexp.(record [ "root"  , atom o.root
-                           ; "switch", atom o.switch
+      Sexp.To_sexp.(record [ "root"  , string o.root
+                           ; "switch", string o.switch
                            ])
 end
 
@@ -92,10 +92,11 @@ let sexp_of_t t =
   let open Sexp.To_sexp in
   let path = Path.sexp_of_t in
   record
-    [ "name", atom t.name
+    [ "name", atom_of_string t.name
     ; "kind", Kind.sexp_of_t t.kind
     ; "merlin", bool t.merlin
-    ; "for_host", option atom (Option.map t.for_host ~f:(fun t -> t.name))
+    ; "for_host", option atom_of_string
+                    (Option.map t.for_host ~f:(fun t -> t.name))
     ; "build_dir", path t.build_dir
     ; "toplevel_path", option path t.toplevel_path
     ; "ocaml_bin", path t.ocaml_bin
@@ -104,13 +105,13 @@ let sexp_of_t t =
     ; "ocamlopt", option path t.ocamlopt
     ; "ocamldep", path t.ocamldep
     ; "ocamlmklib", path t.ocamlmklib
-    ; "env", list (pair atom atom) (Env_var_map.bindings t.env_extra)
+    ; "env", list (pair atom_of_string atom_of_string)
+               (Env_var_map.bindings t.env_extra)
     ; "findlib_path", list path (Findlib.path t.findlib)
     ; "arch_sixtyfour", bool t.arch_sixtyfour
     ; "natdynlink_supported", bool t.natdynlink_supported
-    ; "opam_vars", atom_hashtbl atom t.opam_var_cache
-    ; "ocamlc_config",
-      list (pair atom Sexp.atom_or_quoted_string) t.ocamlc_config
+    ; "opam_vars", atom_hashtbl string t.opam_var_cache
+    ; "ocamlc_config", list (pair atom_of_string string) t.ocamlc_config
     ; "which", atom_hashtbl (option path) t.which_cache
     ]
 

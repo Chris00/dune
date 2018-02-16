@@ -14,7 +14,7 @@ module Jbuild_version = struct
 
   let t =
     enum
-      [ "1", V1
+      [ Sexp.Atom.of_string "1", V1
       ]
 
   let latest_stable = V1
@@ -75,13 +75,13 @@ let relative_file sexp =
 module Scope = struct
   type t =
     { name     : string option
-    ; packages : Package.t String_map.t
+    ; packages : Package.t Sexp.Atom_map.t
     ; root     : Path.t
     }
 
   let empty =
     { name     = None
-    ; packages = String_map.empty
+    ; packages = Sexp.Atom_map.empty
     ; root     = Path.root
     }
 
@@ -96,8 +96,8 @@ module Scope = struct
       List.iter rest ~f:(fun pkg -> assert (pkg.Package.path = root));
       { name = Some name
       ; packages =
-          String_map.of_alist_exn (List.map pkgs ~f:(fun pkg ->
-            pkg.Package.name, pkg))
+          Sexp.Atom_map.of_alist_exn (List.map pkgs ~f:(fun pkg ->
+            Sexp.Atom.of_string pkg.Package.name, pkg))
       ; root
       }
 
@@ -109,7 +109,7 @@ module Scope = struct
            (Path.to_string (Path.relative pkg.path (pkg.name ^ ".opam")))))
 
   let default t =
-    match String_map.values t.packages with
+    match Sexp.Atom_map.values t.packages with
     | [pkg] -> Ok pkg
     | [] ->
       Error
@@ -125,39 +125,39 @@ module Scope = struct
             stanza is for. I have the choice between these ones:\n\
             %s\n\
             You need to add a (package ...) field in this (install ...) stanza"
-           (package_listing (String_map.values t.packages)))
+           (package_listing (Sexp.Atom_map.values t.packages)))
 
-  let resolve t name =
-    match String_map.find name t.packages with
+  let resolve t (Sexp.Atom.A sname as name) =
+    match Sexp.Atom_map.find name t.packages with
     | Some pkg ->
       Ok pkg
     | None ->
-      if String_map.is_empty t.packages then
+      if Sexp.Atom_map.is_empty t.packages then
         Error (sprintf
                  "You cannot declare items to be installed without \
                   adding a <package>.opam file at the root of your project.\n\
                   To declare elements to be installed as part of package %S, \
                   add a %S file at the root of your project."
-                 name (name ^ ".opam"))
+                 sname (sname ^ ".opam"))
       else
         Error (sprintf
                  "The current scope doesn't define package %S.\n\
                   The only packages for which you can declare \
                   elements to be installed in this directory are:\n\
                   %s%s"
-                 name
-                 (package_listing (String_map.values t.packages))
-                 (hint name (String_map.keys t.packages)))
+                 sname
+                 (package_listing (Sexp.Atom_map.values t.packages))
+                 (Sexp.Of_sexp.hint name (Sexp.Atom_map.keys t.packages)))
 
   let package t sexp =
-    match resolve t (string sexp) with
+    match resolve t (atom sexp) with
     | Ok p -> p
     | Error s -> Loc.fail (Sexp.Ast.loc sexp) "%s" s
 
   let package_field t =
     map_validate (field_o "package" string) ~f:(function
       | None -> default t
-      | Some name -> resolve t name)
+      | Some name -> resolve t (Sexp.Atom.of_string name))
 end
 
 
@@ -190,7 +190,7 @@ module Pp_or_flags = struct
       PP (Pp.of_string s)
 
   let t = function
-    | Atom (_, s) | Quoted_string (_, s) -> of_string s
+    | Atom (_, A s) | Quoted_string (_, s) -> of_string s
     | List (_, l) -> Flags (List.map l ~f:string)
 
   let split l =
@@ -230,15 +230,17 @@ module Dep_conf = struct
 
   let sexp_of_t = function
     | File t ->
-       Sexp.list [Sexp.atom "file" ; String_with_vars.sexp_of_t t]
+       Sexp.list [Sexp.atom_of_string "file" ; String_with_vars.sexp_of_t t]
     | Alias t ->
-       Sexp.list [Sexp.atom "alias" ; String_with_vars.sexp_of_t t]
+       Sexp.list [Sexp.atom_of_string "alias" ; String_with_vars.sexp_of_t t]
     | Alias_rec t ->
-       Sexp.list [Sexp.atom "alias_rec" ; String_with_vars.sexp_of_t t]
+       Sexp.list [Sexp.atom_of_string "alias_rec" ;
+                  String_with_vars.sexp_of_t t]
     | Glob_files t ->
-       Sexp.list [Sexp.atom "glob_files" ; String_with_vars.sexp_of_t t]
+       Sexp.list [Sexp.atom_of_string "glob_files" ;
+                  String_with_vars.sexp_of_t t]
     | Files_recursively_in t ->
-       Sexp.list [Sexp.atom "files_recursively_in" ;
+       Sexp.list [Sexp.atom_of_string "files_recursively_in" ;
                   String_with_vars.sexp_of_t t]
 end
 
@@ -270,7 +272,7 @@ module Per_module = struct
 
   let t a sexp =
     match sexp with
-    | List (_, Atom (_, "per_module") :: rest) -> begin
+    | List (_, Atom (_, A "per_module") :: rest) -> begin
         List.concat_map rest ~f:(fun sexp ->
           let pp, names = pair a module_names sexp in
           List.map (String_set.elements names) ~f:(fun name -> (name, pp)))
@@ -356,7 +358,7 @@ module Lib_dep = struct
   let choice = function
     | List (_, l) as sexp ->
       let rec loop required forbidden = function
-        | [Atom (_, "->"); fsexp] ->
+        | [Atom (_, A "->"); fsexp] ->
           let common = String_set.inter required forbidden in
           if not (String_set.is_empty common) then
             of_sexp_errorf sexp
@@ -366,10 +368,10 @@ module Lib_dep = struct
           ; forbidden
           ; file = file fsexp
           }
-        | Atom (_, "->") :: _
+        | Atom (_, A "->") :: _
         | List _ :: _ | [] ->
           of_sexp_error sexp "(<[!]libraries>... -> <file>) expected"
-        | (Atom (_, s) | Quoted_string (_, s)) :: l ->
+        | (Atom (_, A s) | Quoted_string (_, s)) :: l ->
           let len = String.length s in
           if len > 0 && s.[0] = '!' then
             let s = String.sub s ~pos:1 ~len:(len - 1) in
@@ -381,9 +383,9 @@ module Lib_dep = struct
     | sexp -> of_sexp_error sexp "(<library-name> <code>) expected"
 
   let t = function
-    | Atom (_, s) ->
+    | Atom (_, A s) ->
       Direct s
-    | List (loc, Atom (_, "select") :: m :: Atom (_, "from") :: libs) ->
+    | List (loc, Atom (_, A "select") :: m :: Atom (_, A "from") :: libs) ->
       Select { result_fn = file m
              ; choices   = List.map libs ~f:choice
              ; loc
@@ -517,7 +519,7 @@ module Public_lib = struct
         match String.split s ~on:'.' with
         | [] -> assert false
         | pkg :: rest ->
-          match Scope.resolve pkgs pkg with
+          match Scope.resolve pkgs (Sexp.Atom.of_string pkg) with
           | Ok pkg ->
             Ok (Some
                   { package = pkg
@@ -536,9 +538,9 @@ module Library = struct
 
     let t =
       enum
-        [ "normal"       , Normal
-        ; "ppx_deriver"  , Ppx_deriver
-        ; "ppx_rewriter" , Ppx_rewriter
+        [ Sexp.Atom.of_string "normal"       , Normal
+        ; Sexp.Atom.of_string "ppx_deriver"  , Ppx_deriver
+        ; Sexp.Atom.of_string "ppx_rewriter" , Ppx_rewriter
         ]
   end
 
@@ -632,8 +634,8 @@ module Install_conf = struct
 
   let file sexp =
     match sexp with
-    | Atom (_, src) -> { src; dst = None }
-    | List (_, [Atom (_, src); Atom (_, "as"); Atom (_, dst)]) ->
+    | Atom (_, A src) -> { src; dst = None }
+    | List (_, [Atom (_, A src); Atom (_, A "as"); Atom (_, A dst)]) ->
       { src; dst = Some dst }
     | _ ->
       of_sexp_error sexp
@@ -751,10 +753,10 @@ module Rule = struct
 
     let t =
       enum
-        [ "standard"           , Standard
-        ; "fallback"           , Fallback
-        ; "promote"            , Promote
-        ; "promote-until-clean", Promote_but_delete_on_clean
+        [ Sexp.Atom.of_string "standard"           , Standard
+        ; Sexp.Atom.of_string "fallback"           , Fallback
+        ; Sexp.Atom.of_string "promote"            , Promote
+        ; Sexp.Atom.of_string "promote-until-clean", Promote_but_delete_on_clean
         ]
 
     let field = field "mode" t ~default:Standard
@@ -1055,7 +1057,7 @@ module Stanzas = struct
   and parse ~default_version ~file ~include_stack pkgs sexps =
     let versions, sexps =
       List.partition_map sexps ~f:(function
-        | List (loc, [Atom (_, "jbuild_version"); ver]) ->
+        | List (loc, [Atom (_, A "jbuild_version"); ver]) ->
             Inl (Jbuild_version.t ver, loc)
           | sexp -> Inr sexp)
     in

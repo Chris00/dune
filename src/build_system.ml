@@ -1080,8 +1080,8 @@ module Trace = struct
           Pmap.add acc ~key ~data)
         |> Path.Map.bindings
         |> List.map ~f:(fun (path, hash) ->
-               Sexp.list [ Sexp.atom (Path.to_string path);
-                           Sexp.atom (Digest.to_hex hash) ]))
+               Sexp.list [ Sexp.atom_or_quoted_string (Path.to_string path);
+                           Sexp.atom_of_string (Digest.to_hex hash) ]))
     in
     if Sys.file_exists "_build" then
       Io.write_file file (Sexp.to_string sexp)
