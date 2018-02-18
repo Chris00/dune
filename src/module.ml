@@ -1,12 +1,14 @@
 open Import
 
+module Atom = Sexp.Atom
+
 module Syntax = struct
   type t = OCaml | Reason
 end
 
 module File = struct
   type t =
-    { name : string
+    { name : Atom.t
     ; syntax : Syntax.t
     }
 
@@ -16,17 +18,18 @@ module File = struct
     | Reason ->
       { syntax = OCaml
       ; name =
-          let base, ext = Filename.split_extension t.name in
-          base ^ ".re" ^
-          (match Filename.extension t.name with
-           | ".re" -> ".ml"
-           | ".rei" -> ".mli"
-           | _ -> code_errorf "to_ocaml: unrecognized extension %s" ext ())
+          let base, ext = Filename.split_extension (Atom.to_string t.name) in
+          (base ^ ".re" ^
+             (match Filename.extension (Atom.to_string t.name) with
+              | ".re" -> ".ml"
+              | ".rei" -> ".mli"
+              | _ -> code_errorf "to_ocaml: unrecognized extension %s" ext ()))
+          |> Atom.unsafe_of_string
       }
 end
 
 type t =
-  { name     : string
+  { name     : Atom.t
   ; impl     : File.t option
   ; intf     : File.t option
   ; obj_name : string
@@ -34,7 +37,8 @@ type t =
 
 let name t = t.name
 
-let real_unit_name t = String.capitalize_ascii (Filename.basename t.obj_name)
+let real_unit_name t =
+  String.capitalize_ascii (Filename.basename t.obj_name)
 
 let has_impl t = Option.is_some t.impl
 
@@ -44,7 +48,7 @@ let file t ~dir (kind : Ml_kind.t) =
     | Impl -> t.impl
     | Intf -> t.intf
   in
-  Option.map file ~f:(fun f -> Path.relative dir f.name)
+  Option.map file ~f:(fun f -> Path.relative dir (Atom.to_string f.name))
 
 let obj_file t ~obj_dir ~ext = Path.relative obj_dir (t.obj_name ^ ext)
 
@@ -76,7 +80,9 @@ let iter t ~f =
 
 let set_obj_name t ~wrapper =
   match wrapper with
-  | Some s -> { t with obj_name = sprintf "%s__%s" s t.name }
+  | Some s ->
+     { t with obj_name = sprintf "%s__%s" (Atom.to_string s)
+                           (Atom.to_string t.name) }
   | None ->
     let fn =
       match t.impl with
@@ -84,8 +90,8 @@ let set_obj_name t ~wrapper =
       | None -> (Option.value_exn t.intf).name
     in
     let obj_name  =
-      match String.index fn '.' with
+      match String.index (Atom.to_string fn) '.' with
       | None -> fn
-      | Some i -> String.sub fn ~pos:0 ~len:i
+      | Some i -> Atom.sub fn ~pos:0 ~len:i
     in
-    { t with obj_name }
+    { t with obj_name = Atom.to_string obj_name }

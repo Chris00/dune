@@ -6,7 +6,7 @@ end
 
 module File : sig
   type t =
-    { name : string
+    { name : Sexp.Atom.t
     ; syntax: Syntax.t
     }
 
@@ -14,16 +14,17 @@ module File : sig
 end
 
 type t =
-  { name      : string (** Name of the module. This is always the basename of the filename
-                           without the extension. *)
+  { name      : Sexp.Atom.t (** Name of the module. This is always the
+                               basename of the filename without the
+                               extension. *)
   ; impl      : File.t option
   ; intf      : File.t option
 
-  ; obj_name  : string (** Object name. It is different from [name] for wrapped
-                           modules. *)
+  ; obj_name  : string (** Object name. It is different from [name]
+                           for wrapped modules.  May be empty. *)
   }
 
-val name : t -> string
+val name : t -> Sexp.Atom.t
 
 (** Real unit name once wrapped. This is always a valid module name. *)
 val real_unit_name : t -> string
@@ -49,4 +50,4 @@ val iter : t -> f:(Ml_kind.t -> File.t -> unit) -> unit
 val has_impl : t -> bool
 
 (** Set the [obj_name] field of the module. [wrapper] might be a library name. *)
-val set_obj_name : t -> wrapper:string option -> t
+val set_obj_name : t -> wrapper:Sexp.Atom.t option -> t

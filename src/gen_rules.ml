@@ -2,6 +2,9 @@ open Import
 open Jbuild
 open Build.O
 open! No_io
+module Atom = Sexp.Atom
+module Atom_set = Sexp.Atom_set
+module Atom_map = Sexp.Atom_map
 
 (* +-----------------------------------------------------------------+
    | Utils                                                           |
@@ -29,14 +32,15 @@ module Gen(P : Params) = struct
 
   module Eval_modules = Ordered_set_lang.Make(struct
       type t = Module.t
-      let name = Module.name
+      let name t = Module.name t
     end)
 
   let parse_modules ~all_modules ~buildable =
     let conf : Buildable.t = buildable in
     let parse ~loc s =
-        let s = String.capitalize_ascii s in
-        match String_map.find s all_modules with
+      let m = try Atom.of_string(String.capitalize_ascii s)
+              with _ -> Loc.fail loc "%S is not a valid module name" s in
+        match Atom_map.find m all_modules with
         | Some m -> m
         | None -> Loc.fail loc "Module %s doesn't exist." s
     in
@@ -50,28 +54,29 @@ module Gen(P : Params) = struct
       Eval_modules.eval_unordered
         conf.modules_without_implementation
         ~parse
-        ~standard:String_map.empty
+        ~standard:Atom_map.empty
     in
     let real_intf_only =
-      String_map.filter modules
+      Atom_map.filter modules
         ~f:(fun _ (m : Module.t) -> Option.is_none m.impl)
     in
-    if String_map.equal intf_only real_intf_only
+    if Atom_map.equal intf_only real_intf_only
          ~cmp:(fun a b -> Module.name a = Module.name b) then
       modules
     else begin
       let should_be_listed, shouldn't_be_listed =
-        String_map.merge intf_only real_intf_only ~f:(fun name x y ->
+        Atom_map.merge intf_only real_intf_only ~f:(fun name x y ->
           match x, y with
           | Some _, Some _ -> None
-          | None  , Some _ -> Some (Inl (String.uncapitalize_ascii name))
-          | Some _, None   -> Some (Inr (String.uncapitalize_ascii name))
+          | None  , Some _ -> Some (Inl (Atom.uncapitalize name))
+          | Some _, None   -> Some (Inr (Atom.uncapitalize name))
           | None  , None   -> assert false)
-        |> String_map.values
+        |> Atom_map.values
         |> List.partition_map ~f:(fun x -> x)
       in
       let list_modules l =
-        String.concat ~sep:"\n" (List.map l ~f:(sprintf "- %s"))
+        List.map l ~f:(fun m -> sprintf "- %s" (Atom.to_string m))
+        |> String.concat ~sep:"\n"
       in
       if should_be_listed <> [] then begin
         match Ordered_set_lang.loc conf.modules_without_implementation with
@@ -83,7 +88,8 @@ module Gen(P : Params) = struct
              \n  %s\
              \n\
              \nThis will become an error in the future."
-            (Sexp.to_string (List [ Atom "modules_without_implementation"
+            (Sexp.to_string (List [ Atom (Atom.unsafe_of_string
+                                            "modules_without_implementation")
                                   ; Sexp.To_sexp.(list atom) should_be_listed
                                   ]))
         | Some loc ->
@@ -106,8 +112,8 @@ module Gen(P : Params) = struct
         let shouldn't_be_listed =
           Eval.eval_unordered conf.modules_without_implementation
             ~parse
-            ~standard:(String_map.map all_modules ~f:(fun m -> (Loc.none, m)))
-          |> String_map.values
+            ~standard:(Atom_map.map all_modules ~f:(fun m -> (Loc.none, m)))
+          |> Atom_map.values
           |> List.filter ~f:(fun (_, (m : Module.t)) ->
             Option.is_some m.impl)
         in
@@ -115,7 +121,7 @@ module Gen(P : Params) = struct
         let loc, m = List.hd shouldn't_be_listed in
         Loc.fail loc
           "Module %s has an implementation, it cannot be listed here"
-          m.name
+          (Atom.to_string m.name)
       end;
       modules
     end
@@ -230,29 +236,31 @@ module Gen(P : Params) = struct
       |> List.filter_map ~f:(fun fn ->
         (* we aren't using Filename.extension because we want to handle
            filenames such as foo.cppo.ml *)
+        let name = Atom.of_string fn in
         match String.lsplit2 fn ~on:'.' with
-        | Some (_, "ml") -> Some (Inl { Module.File.syntax=OCaml ; name=fn })
-        | Some (_, "re") -> Some (Inl { Module.File.syntax=Reason ; name=fn })
-        | Some (_, "mli") -> Some (Inr { Module.File.syntax=OCaml ; name=fn })
-        | Some (_, "rei") -> Some (Inr { Module.File.syntax=Reason ; name=fn })
+        | Some (_, "ml") -> Some (Inl { Module.File.syntax=OCaml ; name })
+        | Some (_, "re") -> Some (Inl { Module.File.syntax=Reason ; name })
+        | Some (_, "mli") -> Some (Inr { Module.File.syntax=OCaml ; name })
+        | Some (_, "rei") -> Some (Inr { Module.File.syntax=Reason ; name })
         | _ -> None)
       |> List.partition_map ~f:(fun x -> x) in
     let parse_one_set files =
       List.map files ~f:(fun (f : Module.File.t) ->
-        (String.capitalize_ascii (Filename.chop_extension f.name), f))
-      |> String_map.of_alist
+          (Atom.capitalize (Atom.chop_extension f.name), f))
+      |> Atom_map.of_alist
       |> function
       | Ok x -> x
       | Error (name, f1, f2) ->
         let src_dir = Path.drop_build_context_exn dir in
         die "too many files for module %s in %s: %s and %s"
-          name (Path.to_string src_dir) f1.name f2.name
+          (Atom.to_string name) (Path.to_string src_dir)
+          (Atom.to_string f1.name) (Atom.to_string f2.name)
     in
     let impls = parse_one_set impl_files in
     let intfs = parse_one_set intf_files in
-    String_map.merge impls intfs ~f:(fun name impl intf ->
+    Atom_map.merge impls intfs ~f:(fun name impl intf ->
       Some
-        { Module.name
+        { Module.name = name
         ; impl
         ; intf
         ; obj_name = ""
@@ -267,9 +275,9 @@ module Gen(P : Params) = struct
         guess_modules ~dir ~files)
 
   type modules_by_lib =
-    { modules          : Module.t String_map.t
+    { modules          : Module.t Atom_map.t
     ; alias_module     : Module.t option
-    ; main_module_name : string
+    ; main_module_name : Atom.t
     }
 
   let modules_by_lib =
@@ -280,9 +288,9 @@ module Gen(P : Params) = struct
         let modules =
           parse_modules ~all_modules ~buildable:lib.buildable
         in
-        let main_module_name = String.capitalize_ascii lib.name in
+        let main_module_name = Atom.capitalize lib.name in
         let modules =
-          String_map.map modules ~f:(fun (m : Module.t) ->
+          Atom_map.map modules ~f:(fun (m : Module.t) ->
             let wrapper =
               if not lib.wrapped || m.name = main_module_name then
                 None
@@ -293,26 +301,28 @@ module Gen(P : Params) = struct
         in
         let alias_module =
           if not lib.wrapped ||
-             (String_map.cardinal modules = 1 &&
-              String_map.mem main_module_name modules) then
+             (Atom_map.cardinal modules = 1 &&
+              Atom_map.mem main_module_name modules) then
             None
-          else if String_map.mem main_module_name modules then
+          else if Atom_map.mem main_module_name modules then
             Some
-              { Module.name = main_module_name ^ "__"
+              { Module.name = Atom.(main_module_name ^ unsafe_of_string "__")
               ; impl = None
-              ; intf = Some { name   = lib.name ^ "__.mli-gen"
+              ; intf = Some { name   = Atom.(lib.name
+                                             ^ unsafe_of_string "__.mli-gen")
                             ; syntax = OCaml
                             }
-              ; obj_name = lib.name ^ "__"
+              ; obj_name = Atom.to_string lib.name ^ "__"
               }
           else
             Some
               { Module.name = main_module_name
-              ; impl = Some { name   = lib.name ^ ".ml-gen"
+              ; impl = Some { name   = Atom.(lib.name
+                                             ^ unsafe_of_string ".ml-gen")
                             ; syntax = OCaml
                             }
               ; intf = None
-              ; obj_name = lib.name
+              ; obj_name = Atom.to_string lib.name
               }
         in
         { modules; alias_module; main_module_name })
@@ -322,21 +332,23 @@ module Gen(P : Params) = struct
     let modules =
       match alias_module with
       | None -> modules
-      | Some m -> String_map.add modules ~key:m.name ~data:m
+      | Some m -> Atom_map.add modules ~key:m.name ~data:m
     in
-    String_map.values modules
+    Atom_map.values modules
 
   (* +-----------------------------------------------------------------+
      | Library stuff                                                   |
      +-----------------------------------------------------------------+ *)
 
-  let lib_archive (lib : Library.t) ~dir ~ext = Path.relative dir (lib.name ^ ext)
+  let lib_archive (lib : Library.t) ~dir ~ext =
+    Path.relative dir (Atom.to_string lib.name ^ ext)
 
   let stubs_archive lib ~dir =
     Library.stubs_archive lib ~dir ~ext_lib:ctx.ext_lib
 
   let dll (lib : Library.t) ~dir =
-    Path.relative dir (sprintf "dll%s_stubs%s" lib.name ctx.ext_dll)
+    Path.relative dir (sprintf "dll%s_stubs%s" (Atom.to_string lib.name)
+                         ctx.ext_dll)
 
   let msvc_hack_cclibs cclibs =
     let f lib =
@@ -361,7 +373,7 @@ module Gen(P : Params) = struct
         if not (Library.has_stubs lib) then
           []
         else
-          let stubs_name = lib.name ^ "_stubs" in
+          let stubs_name = Atom.to_string lib.name ^ "_stubs" in
           match mode with
           | Byte -> ["-dllib"; "-l" ^ stubs_name; "-cclib"; "-l" ^ stubs_name]
           | Native -> ["-cclib"; "-l" ^ stubs_name]
@@ -488,13 +500,13 @@ module Gen(P : Params) = struct
     let modules =
       match alias_module with
       | None -> modules
-      | Some m -> String_map.add modules ~key:m.name ~data:m
+      | Some m -> Atom_map.add modules ~key:m.name ~data:m
     in
 
     let dep_graphs =
       Ocamldep.rules sctx ~dir ~modules ~alias_module
         ~lib_interface_module:(if lib.wrapped then
-                                 String_map.find main_module_name modules
+                                 Atom_map.find main_module_name modules
                                else
                                  None)
     in
@@ -507,14 +519,16 @@ module Gen(P : Params) = struct
       in
       SC.add_rule sctx
         (Build.return
-           (String_map.values (String_map.remove m.name modules)
+           (Atom_map.values (Atom_map.remove m.name modules)
             |> List.map ~f:(fun (m : Module.t) ->
               sprintf "(** @canonical %s.%s *)\n\
                        module %s = %s\n"
-                main_module_name m.name
-                m.name (Module.real_unit_name m))
+                (Atom.to_string main_module_name)
+                (Atom.to_string m.name) (Atom.to_string m.name)
+                (Module.real_unit_name m))
             |> String.concat ~sep:"\n")
-         >>> Build.write_file_dyn (Path.relative dir file.name)));
+         >>> Build.write_file_dyn
+               (Path.relative dir (Atom.to_string file.name))));
 
     let requires, real_requires =
       SC.Libs.requires sctx ~dir ~scope ~dep_kind ~item:lib.name
@@ -547,7 +561,7 @@ module Gen(P : Params) = struct
         ~dep_graphs:(Ocamldep.Dep_graphs.dummy m)
         ~requires:(
           let requires =
-            if String_map.is_empty modules then
+            if Atom_map.is_empty modules then
               (* Just so that we setup lib dependencies for empty libraries *)
               requires
             else
@@ -590,7 +604,8 @@ module Gen(P : Params) = struct
                [ As (Utils.g ())
                ; if custom then A "-custom" else As []
                ; A "-o"
-               ; Path (Path.relative dir (sprintf "%s_stubs" lib.name))
+               ; Path (Path.relative dir
+                         (sprintf "%s_stubs" (Atom.to_string lib.name)))
                ; Deps o_files
                ; Dyn (fun cclibs ->
                    (* https://github.com/ocaml/dune/issues/119 *)
@@ -621,7 +636,7 @@ module Gen(P : Params) = struct
 
     List.iter Cm_kind.all ~f:(fun cm_kind ->
       let files =
-        String_map.fold modules ~init:[] ~f:(fun ~key:_ ~data:m acc ->
+        Atom_map.fold modules ~init:[] ~f:(fun ~key:_ ~data:m acc ->
           match Module.cm_file m ~obj_dir cm_kind with
           | None -> acc
           | Some fn -> fn :: acc)
@@ -635,7 +650,7 @@ module Gen(P : Params) = struct
 
     let top_sorted_modules =
       Ocamldep.Dep_graph.top_closed_implementations dep_graphs.impl
-        (String_map.values modules)
+        (Atom_map.values modules)
     in
     List.iter Mode.all ~f:(fun mode ->
       build_lib lib ~scope:scope.data ~flags ~dir ~obj_dir ~mode ~top_sorted_modules);
@@ -687,7 +702,9 @@ module Gen(P : Params) = struct
     let flags =
       match alias_module with
       | None -> Ocaml_flags.common flags
-      | Some m -> Ocaml_flags.prepend_common ["-open"; m.name] flags |> Ocaml_flags.common
+      | Some m ->
+         Ocaml_flags.prepend_common ["-open"; Atom.to_string m.name] flags
+         |> Ocaml_flags.common
     in
     { Merlin.
       requires = real_requires
@@ -710,7 +727,7 @@ module Gen(P : Params) = struct
       | false, Some compiler -> (mode, [], compiler)
       | _                    -> (Byte, ["-custom"], ctx.ocamlc)
     in
-    let exe = Path.relative dir (name ^ exe_ext) in
+    let exe = Path.relative dir (Atom.to_string name ^ exe_ext) in
     let artifacts ~ext modules =
       List.map modules ~f:(Module.obj_file ~obj_dir ~ext)
     in
@@ -763,25 +780,27 @@ module Gen(P : Params) = struct
     let item = snd (List.hd exes.names) in
     (* Use "eobjs" rather than "objs" to avoid a potential conflict with a library of the
        same name *)
-    let obj_dir = Path.relative dir ("." ^ item ^ ".eobjs") in
+    let obj_dir = Path.relative dir ("." ^ Atom.to_string item ^ ".eobjs") in
     let dep_kind = Build.Required in
     let flags = Ocaml_flags.make exes.buildable sctx ~scope:scope.data ~dir in
     let modules =
       parse_modules ~all_modules ~buildable:exes.buildable
     in
     let modules =
-      String_map.map modules ~f:(Module.set_obj_name ~wrapper:None)
+      Atom_map.map modules ~f:(Module.set_obj_name ~wrapper:None)
     in
     let programs =
       List.map exes.names ~f:(fun (loc, name) ->
-        let mod_name = String.capitalize_ascii name in
-        match String_map.find mod_name modules with
+        let mod_name = Atom.capitalize name in
+        match Atom_map.find mod_name modules with
         | Some m ->
           if not (Module.has_impl m) then
-            Loc.fail loc "Module %s has no implementation." mod_name
+            Loc.fail loc "Module %s has no implementation."
+              (Atom.to_string mod_name)
           else
             (name, m)
-        | None -> Loc.fail loc "Module %s doesn't exist." mod_name)
+        | None -> Loc.fail loc "Module %s doesn't exist."
+                    (Atom.to_string mod_name))
     in
 
     let modules =
@@ -845,7 +864,7 @@ module Gen(P : Params) = struct
     let stamp =
       let module S = Sexp.To_sexp in
       Sexp.List
-        [ Atom "user-alias"
+        [ Atom (Atom.unsafe_of_string "user-alias")
         ; S.list   Jbuild.Dep_conf.sexp_of_t   alias_conf.deps
         ; S.option Action.Unexpanded.sexp_of_t alias_conf.action
         ]
@@ -1011,7 +1030,7 @@ module Gen(P : Params) = struct
               ; List.filter_map Ml_kind.all ~f:(Module.cmt_file m ~obj_dir)
               ; List.filter_map [m.intf;m.impl] ~f:(function
                   | None -> None
-                  | Some f -> Some (Path.relative dir f.name))
+                  | Some f -> Some (Path.relative dir (Atom.to_string f.name)))
               ])
         ; if_ byte [ lib_archive ~dir lib ~ext:".cma" ]
         ; if_ (Library.has_stubs lib) [ stubs_archive ~dir lib ]
@@ -1035,12 +1054,12 @@ module Gen(P : Params) = struct
       match lib.kind with
       | Normal | Ppx_deriver -> []
       | Ppx_rewriter ->
-        let pps = [Pp.of_string lib.name] in
+        let pps = [Pp.of_string (Atom.to_string lib.name)] in
         let pps =
           (* This is a temporary hack until we get a standard driver *)
           let deps = List.concat_map lib.buildable.libraries ~f:Lib_dep.to_lib_names in
           if List.exists deps ~f:(function
-            | "ppx_driver" | "ppx_type_conv" -> true
+            | Atom.A "ppx_driver" | Atom.A "ppx_type_conv" -> true
             | _ -> false) then
             pps @ [Pp.of_string "ppx_driver.runner"]
           else

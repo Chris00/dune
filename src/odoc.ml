@@ -2,6 +2,8 @@ open Import
 open Jbuild
 open Build.O
 
+module Atom = Sexp.Atom
+module Atom_map = Sexp.Atom_map
 module SC = Super_context
 
 let ( ++ ) = Path.relative
@@ -141,13 +143,14 @@ let all_mld_files sctx ~(lib : Library.t) ~lib_name ~modules ~dir files =
                 "{1 Library %s}\n\
                  The entry point for this library is module {!module:%s}."
                 lib_name
-                (String.capitalize_ascii lib.name)
+                (Atom.to_string (Atom.capitalize lib.name))
             else
               sprintf
                 "{1 Library %s}\n\
                  This library exposes the following toplevel modules: {!modules:%s}."
                 lib_name
-                (String_map.keys modules |> String.concat ~sep:" "))))
+                (Atom_map.keys modules |> List.map ~f:Atom.to_string
+                 |> String.concat ~sep:" "))))
        >>>
        Build.write_file_dyn generated_mld);
     mld
@@ -172,7 +175,8 @@ let setup_library_rules sctx (lib : Library.t) ~dir ~modules ~mld_files
        >>^ Lib.include_flags ~stdlib_dir:ctx.stdlib_dir)
   in
   let mld_files =
-    all_mld_files sctx ~dir ~lib ~lib_name ~modules mld_files
+    all_mld_files sctx ~dir ~lib ~lib_name:(Atom.to_string lib_name)
+      ~modules mld_files
   in
   let mld_and_odoc_files =
     List.map mld_files ~f:(fun m ->
@@ -180,7 +184,7 @@ let setup_library_rules sctx (lib : Library.t) ~dir ~modules ~mld_files
         ~doc_dir ~lib_unique_name (Mld m))
   in
   let modules_and_odoc_files =
-    List.map (String_map.values modules) ~f:(fun m ->
+    List.map (Atom_map.values modules) ~f:(fun m ->
       compile sctx ~odoc ~dir ~obj_dir ~includes ~dep_graphs
         ~doc_dir ~lib_unique_name (Module m))
   in
@@ -225,7 +229,8 @@ let setup_toplevel_index_rule sctx =
       | Stanza.Library
           {Library.kind = Library.Kind.Normal; public = Some public_info; _} ->
         let name = public_info.name in
-        let link = sp {|<a href="%s/index.html">%s</a>|} name name in
+        let link = sp {|<a href="%s/index.html">%s</a>|}
+                     (Atom.to_string name) (Atom.to_string name) in
         let version_suffix =
           match public_info.package.Package.version_from_opam_file with
           | None ->
@@ -279,5 +284,5 @@ let gen_rules sctx ~dir:_ rest =
       ; required_by = [Alias (Path.of_string "doc")]
       } in
     let open Option.Infix in
-    Option.iter (Lib_db.Scope.find scope lib >>= Lib.src_dir)
+    Option.iter (Lib_db.Scope.find scope (Atom.of_string lib) >>= Lib.src_dir)
       ~f:(fun dir -> SC.load_dir sctx ~dir)

@@ -1,4 +1,6 @@
 open Import
+module Atom = Sexp.Atom
+module Atom_set = Sexp.Atom_set
 
 module FP = Findlib.Package
 
@@ -18,14 +20,14 @@ module T = struct
     | External pkg -> FP.name pkg
     | Internal (_, lib) -> Jbuild.Library.best_name lib
 
-  let compare a b = String.compare (best_name a) (best_name b)
+  let compare a b = Atom.compare (best_name a) (best_name b)
 end
 
 include T
 module Set = Set.Make(T)
 
 let lib_obj_dir dir lib =
-  Path.relative dir ("." ^ lib.Jbuild.Library.name ^ ".objs")
+  Path.relative dir ("." ^ (Atom.to_string lib.Jbuild.Library.name) ^ ".objs")
 
 let get_internal = function
   | Internal x -> Some x
@@ -72,11 +74,11 @@ let c_include_flags ts ~stdlib_dir =
 let describe = function
   | Internal (_, lib) ->
     sprintf "%s (local)"
-      (match lib.public with
-       | Some p -> p.name
-       | None -> lib.name)
+      (Atom.to_string (match lib.public with
+                       | Some p -> p.name
+                       | None -> lib.name))
   | External pkg ->
-    sprintf "%s (external)" (FP.name pkg)
+    sprintf "%s (external)" (Atom.to_string (FP.name pkg))
 
 let link_flags ts ~mode ~stdlib_dir =
   Arg_spec.S
@@ -86,7 +88,8 @@ let link_flags ts ~mode ~stdlib_dir =
        | External pkg ->
          Arg_spec.Deps (FP.archives pkg mode)
        | Internal (dir, lib) ->
-         Dep (Path.relative dir (lib.name ^ Mode.compiled_lib_ext mode))))
+         Dep (Path.relative dir (Atom.to_string lib.name
+                                 ^ Mode.compiled_lib_ext mode))))
 
 let stub_archives t ~ext_lib =
   match t with
@@ -102,12 +105,14 @@ let ml_archives t ~mode ~ext_lib =
   | External pkg -> FP.archives pkg mode
   | Internal (dir, lib) ->
     let l =
-      [Path.relative dir (lib.name ^ Mode.compiled_lib_ext mode)]
+      [Path.relative dir (Atom.to_string lib.name
+                          ^ Mode.compiled_lib_ext mode)]
     in
     match mode, ext_lib with
     | Byte, _
     | Native, None -> l
-    | Native, Some ext_lib -> Path.relative dir (lib.name ^ ext_lib) :: l
+    | Native, Some ext_lib ->
+       Path.relative dir (Atom.to_string lib.name ^ ext_lib) :: l
 
 let archive_files ts ~mode ~ext_lib =
   List.concat_map ts ~f:(fun lib ->
@@ -126,7 +131,7 @@ let jsoo_runtime_files ts =
       List.map lib.buildable.js_of_ocaml.javascript_files ~f:(Path.relative dir))
 
 let ppx_runtime_libraries t ~required_by =
-  String_set.of_list (
+  Atom_set.of_list (
     match t with
     | Internal (_, lib) -> lib.ppx_runtime_libraries
     | External pkg -> List.map ~f:FP.name (FP.ppx_runtime_deps pkg ~required_by)
@@ -150,12 +155,12 @@ let remove_dups_preserve_order libs =
     | [] -> List.rev acc
     | lib :: libs ->
       let name = best_name lib in
-      if String_set.mem name seen then
+      if Atom_set.mem name seen then
         loop seen libs acc
       else
-        loop (String_set.add name seen) libs (lib :: acc)
+        loop (Atom_set.add name seen) libs (lib :: acc)
   in
-  loop String_set.empty libs []
+  loop Atom_set.empty libs []
 ;;
 
 let public_name = function
@@ -163,15 +168,15 @@ let public_name = function
   | Internal (_, lib) -> Option.map lib.public ~f:(fun p -> p.name)
 
 let unique_id = function
-  | External pkg -> FP.name pkg
+  | External pkg -> Atom.to_string(FP.name pkg)
   | Internal (dir, lib) ->
     match lib.public with
-    | Some p -> p.name
-    | None -> Path.to_string dir ^ "\000" ^ lib.name
+    | Some p -> Atom.to_string p.name
+    | None -> Path.to_string dir ^ "\000" ^ Atom.to_string lib.name
 
 type local =
   { src: Path.t
-  ; name: string
+  ; name: Atom.t
   }
 
 let local = function

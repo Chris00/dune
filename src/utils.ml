@@ -184,10 +184,10 @@ module Cached_digest = struct
           Pmap.add acc ~key ~data)
         |> Path.Map.bindings
         |> List.map ~f:(fun (path, file) ->
-          Sexp.List [ Atom (Path.to_string path)
-                    ; Atom (Digest.to_hex file.digest)
-                    ; Atom (Int64.to_string (Int64.bits_of_float file.timestamp))
-                    ]))
+          Sexp.(List [ Quoted_string (Path.to_string path)
+                     ; Atom (Atom.unsafe_of_string (Digest.to_hex file.digest))
+                     ; Atom (Atom.of_int64 (Int64.bits_of_float file.timestamp))
+                     ])))
     in
     if Sys.file_exists "_build" then
       Io.write_file db_file (Sexp.to_string sexp)

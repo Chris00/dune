@@ -12,7 +12,7 @@ val loc : t -> Loc.t option
 (** Value parsed from elements in the DSL *)
 module type Value = sig
   type t
-  val name : t -> string
+  val name : t -> Sexp.Atom.t
 end
 
 module Make(Value : Value) : sig
@@ -24,12 +24,12 @@ module Make(Value : Value) : sig
     -> standard:Value.t list
     -> Value.t list
 
-  (** Same as [eval] but the result is unordered *)
+  (** Same as [eval] but the result is unordered. *)
   val eval_unordered
     :  t
     -> parse:(loc:Loc.t -> string -> Value.t)
-    -> standard:Value.t String_map.t
-    -> Value.t String_map.t
+    -> standard:Value.t Sexp.Atom_map.t
+    -> Value.t Sexp.Atom_map.t
 end
 
 val standard : t

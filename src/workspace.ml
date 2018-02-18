@@ -13,6 +13,12 @@ module Context = struct
       | s        -> Named s
   end
 
+  let atom_switch = Sexp.Atom.of_string "switch"
+  let atom_name = Sexp.Atom.of_string "name"
+  let atom_targets = Sexp.Atom.of_string "targets"
+  let atom_root = Sexp.Atom.of_string "root"
+  let atom_merlin = Sexp.Atom.of_string "merlin"
+
   module Opam = struct
     type t =
       { name    : string
@@ -23,11 +29,11 @@ module Context = struct
       }
 
     let t =
-      field   "switch"  string                                    >>= fun switch ->
-      field   "name"    string ~default:switch                    >>= fun name ->
-      field   "targets" (list Target.t) ~default:[Target.Native]  >>= fun targets ->
-      field_o "root"    string                                    >>= fun root ->
-      field_b "merlin"                                            >>= fun merlin ->
+      field   atom_switch  string                                    >>= fun switch ->
+      field   atom_name    string ~default:switch                    >>= fun name ->
+      field   atom_targets (list Target.t) ~default:[Target.Native]  >>= fun targets ->
+      field_o atom_root    string                                    >>= fun root ->
+      field_b atom_merlin                                            >>= fun merlin ->
       return { switch
              ; name
              ; root
@@ -38,16 +44,19 @@ module Context = struct
 
   type t = Default of Target.t list | Opam of Opam.t
 
+  let atom_default = Sexp.Atom.of_string "default"
+  let atom_opam = Sexp.Atom.of_string "opam"
+
   let t = function
-    | Atom (_, "default") -> Default [Native]
+    | Atom (_, A "default") -> Default [Native]
     | List (_, List _ :: _) as sexp -> Opam (record Opam.t sexp)
     | sexp ->
       sum
-        [ cstr_record "default"
-            (field "targets" (list Target.t) ~default:[Target.Native]
+        [ cstr_record atom_default
+            (field atom_targets (list Target.t) ~default:[Target.Native]
              >>= fun targets ->
              return (Default targets))
-        ; cstr_record "opam"
+        ; cstr_record atom_opam
             (Opam.t >>= fun x -> return (Opam x))
         ]
         sexp
@@ -72,13 +81,15 @@ type t =
   ; contexts       : Context.t list
   }
 
+let atom_context = Sexp.Atom.of_string "context"
+
 let t ?x sexps =
   let defined_names = ref String_set.empty in
   let merlin_ctx, contexts =
     List.fold_left sexps ~init:(None, []) ~f:(fun (merlin_ctx, ctxs) sexp ->
       let ctx =
         sum
-          [ cstr "context" (Context.t @> nil) (fun x -> x) ]
+          [ cstr atom_context (Context.t @> nil) (fun x -> x) ]
           sexp
       in
       let ctx =

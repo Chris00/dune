@@ -1,5 +1,8 @@
 open Import
 open Sexp.Of_sexp
+module Atom = Sexp.Atom
+module Atom_map = Sexp.Atom_map
+module Atom_set = Sexp.Atom_set
 
 (* This file defines the jbuild types as well as the S-expression syntax for the various
    supported version of the specification.
@@ -14,7 +17,7 @@ module Jbuild_version = struct
 
   let t =
     enum
-      [ "1", V1
+      [ Atom.of_string "1", V1
       ]
 
   let latest_stable = V1
@@ -42,14 +45,12 @@ let invalid_lib_name sexp =
   of_sexp_error sexp "invalid library name"
 
 let library_name sexp =
-  match string sexp with
-  | "" -> invalid_lib_name sexp
-  | s ->
-    if s.[0] = '.' then invalid_lib_name sexp;
-    String.iter s ~f:(function
+  let (Atom.A s as name) = atom sexp in (* an atom can never be empty *)
+  if s.[0] = '.' then invalid_lib_name sexp;
+  String.iter s ~f:(function
       | 'A'..'Z' | 'a'..'z' | '_' | '.' | '0'..'9' -> ()
       | _ -> invalid_lib_name sexp);
-    s
+  name
 
 let file sexp =
   match string sexp with
@@ -155,7 +156,8 @@ module Scope = struct
     | Error s -> Loc.fail (Sexp.Ast.loc sexp) "%s" s
 
   let package_field t =
-    map_validate (field_o "package" string) ~f:(function
+    map_validate (field_o (Atom.unsafe_of_string "package") string)
+      ~f:(function
       | None -> default t
       | Some name -> resolve t name)
 end
@@ -163,19 +165,27 @@ end
 
 module Pp : sig
   type t
+  val of_atom : Atom.t -> t
+  val to_atom : t -> Atom.t
   val of_string : string -> t
   val to_string : t -> string
   val compare : t -> t -> int
 end = struct
-  type t = string
+  type t = Atom.t
+
+  let of_atom (Atom.A s as a) =
+    assert (not (String.is_prefix s ~prefix:"-"));
+    a
+
+  let to_atom t = t
 
   let of_string s =
     assert (not (String.is_prefix s ~prefix:"-"));
-    s
+    Atom.of_string s
 
-  let to_string t = t
+  let to_string t = Atom.to_string t
 
-  let compare = String.compare
+  let compare = Atom.compare
 end
 
 module Pp_or_flags = struct
@@ -190,7 +200,10 @@ module Pp_or_flags = struct
       PP (Pp.of_string s)
 
   let t = function
-    | Atom (_, s) | Quoted_string (_, s) -> of_string s
+    | Atom (_, A s) -> of_string s
+    | Quoted_string (_, _) as sexp ->
+       of_sexp_error sexp "Use unquoted atoms for flags and preprocessing \
+                           directives"
     | List (_, l) -> Flags (List.map l ~f:string)
 
   let split l =
@@ -213,7 +226,7 @@ module Dep_conf = struct
   let t =
     let t =
       let cstr name f =
-        cstr name (String_with_vars.t @> nil) f
+        cstr (Atom.unsafe_of_string name) (String_with_vars.t @> nil) f
       in
       sum
         [ cstr "file"                 (fun x -> File x)
@@ -229,17 +242,19 @@ module Dep_conf = struct
       | List _ -> t sexp
 
   open Sexp
-  let sexp_of_t = function
+  let sexp_of_t =
+    let a = Atom.unsafe_of_string in
+    function
     | File t ->
-      List [Atom "file" ; String_with_vars.sexp_of_t t]
+      List [Atom (a "file") ; String_with_vars.sexp_of_t t]
     | Alias t ->
-      List [Atom "alias" ; String_with_vars.sexp_of_t t]
+      List [Atom (a "alias") ; String_with_vars.sexp_of_t t]
     | Alias_rec t ->
-      List [Atom "alias_rec" ; String_with_vars.sexp_of_t t]
+      List [Atom (a "alias_rec") ; String_with_vars.sexp_of_t t]
     | Glob_files t ->
-      List [Atom "glob_files" ; String_with_vars.sexp_of_t t]
+      List [Atom (a "glob_files") ; String_with_vars.sexp_of_t t]
     | Files_recursively_in t ->
-      List [Atom "files_recursively_in" ; String_with_vars.sexp_of_t t]
+      List [Atom (a "files_recursively_in") ; String_with_vars.sexp_of_t t]
 end
 
 module Preprocess = struct
@@ -250,10 +265,11 @@ module Preprocess = struct
     | Pps    of pps
 
   let t =
+    let a = Atom.unsafe_of_string in
     sum
-      [ cstr "no_preprocessing" nil No_preprocessing
-      ; cstr "action" (Action.Unexpanded.t @> nil) (fun x -> Action x)
-      ; cstr "pps" (list Pp_or_flags.t @> nil) (fun l ->
+      [ cstr (a "no_preprocessing") nil No_preprocessing
+      ; cstr (a "action") (Action.Unexpanded.t @> nil) (fun x -> Action x)
+      ; cstr (a "pps") (list Pp_or_flags.t @> nil) (fun l ->
           let pps, flags = Pp_or_flags.split l in
           Pps { pps; flags })
       ]
@@ -270,7 +286,7 @@ module Per_module = struct
 
   let t a sexp =
     match sexp with
-    | List (_, Atom (_, "per_module") :: rest) -> begin
+    | List (_, Atom (_, A "per_module") :: rest) -> begin
         List.concat_map rest ~f:(fun sexp ->
           let pp, names = pair a module_names sexp in
           List.map (String_set.elements names) ~f:(fun name -> (name, pp)))
@@ -326,9 +342,12 @@ module Js_of_ocaml = struct
     }
 
   let t =
+    let a = Atom.of_string in
     record
-      (field_oslu "flags"                                     >>= fun flags ->
-       field     "javascript_files" (list string) ~default:[] >>= fun javascript_files ->
+      (field_oslu (a "flags")
+       >>= fun flags ->
+       field     (a "javascript_files") (list string) ~default:[]
+       >>= fun javascript_files ->
        return { flags; javascript_files })
 
   let default =
@@ -338,8 +357,8 @@ end
 
 module Lib_dep = struct
   type choice =
-    { required  : String_set.t
-    ; forbidden : String_set.t
+    { required  : Atom_set.t
+    ; forbidden : Atom_set.t
     ; file      : string
     }
 
@@ -350,40 +369,42 @@ module Lib_dep = struct
     }
 
   type t =
-    | Direct of string
+    | Direct of Atom.t
     | Select of select
 
   let choice = function
     | List (_, l) as sexp ->
       let rec loop required forbidden = function
-        | [Atom (_, "->"); fsexp] ->
-          let common = String_set.inter required forbidden in
-          if not (String_set.is_empty common) then
+        | [Atom (_, A "->"); fsexp] ->
+          let common = Atom_set.inter required forbidden in
+          if not (Atom_set.is_empty common) then
             of_sexp_errorf sexp
               "library %S is both required and forbidden in this clause"
-              (String_set.choose common);
+              (Atom.to_string (Atom_set.choose common));
           { required
           ; forbidden
           ; file = file fsexp
           }
-        | Atom (_, "->") :: _
+        | Atom (_, A "->") :: _
         | List _ :: _ | [] ->
           of_sexp_error sexp "(<[!]libraries>... -> <file>) expected"
-        | (Atom (_, s) | Quoted_string (_, s)) :: l ->
+        | Quoted_string (_, s) :: _ ->
+          of_sexp_error sexp (sprintf "do not quote the library name %s" s)
+        | Atom (_, (A s as name)) :: l ->
           let len = String.length s in
           if len > 0 && s.[0] = '!' then
-            let s = String.sub s ~pos:1 ~len:(len - 1) in
-            loop required (String_set.add s forbidden) l
+            let name = Atom.sub name ~pos:1 ~len:(len - 1) in
+            loop required (Atom_set.add name forbidden) l
           else
-            loop (String_set.add s required) forbidden l
+            loop (Atom_set.add name required) forbidden l
       in
-      loop String_set.empty String_set.empty l
+      loop Atom_set.empty Atom_set.empty l
     | sexp -> of_sexp_error sexp "(<library-name> <code>) expected"
 
   let t = function
     | Atom (_, s) ->
       Direct s
-    | List (loc, Atom (_, "select") :: m :: Atom (_, "from") :: libs) ->
+    | List (loc, Atom (_, A "select") :: m :: Atom (_, A "from") :: libs) ->
       Select { result_fn = file m
              ; choices   = List.map libs ~f:choice
              ; loc
@@ -394,13 +415,13 @@ module Lib_dep = struct
   let to_lib_names = function
     | Direct s -> [s]
     | Select s ->
-      List.fold_left s.choices ~init:String_set.empty ~f:(fun acc x ->
-        String_set.union acc (String_set.union x.required x.forbidden))
-      |> String_set.elements
+      List.fold_left s.choices ~init:Atom_set.empty ~f:(fun acc x ->
+        Atom_set.union acc (Atom_set.union x.required x.forbidden))
+      |> Atom_set.elements
 
   let direct s = Direct s
 
-  let of_pp pp = Direct (Pp.to_string pp)
+  let of_pp pp = Direct (Atom.of_string (Pp.to_string pp))
 end
 
 module Lib_deps = struct
@@ -414,32 +435,34 @@ module Lib_deps = struct
   let t sexp =
     let t = list Lib_dep.t sexp in
     let add kind name acc =
-      match String_map.find name acc with
-      | None -> String_map.add acc ~key:name ~data:kind
+      match Atom_map.find name acc with
+      | None -> Atom_map.add acc ~key:name ~data:kind
       | Some kind' ->
         match kind, kind' with
         | Required, Required ->
-          of_sexp_errorf sexp "library %S is present twice" name
+          of_sexp_errorf sexp "library %S is present twice"
+            (Atom.to_string name)
         | (Optional|Forbidden), (Optional|Forbidden) ->
           acc
         | Optional, Required | Required, Optional ->
           of_sexp_errorf sexp
             "library %S is present both as an optional and required dependency"
-            name
+            (Atom.to_string name)
         | Forbidden, Required | Required, Forbidden ->
           of_sexp_errorf sexp
             "library %S is present both as a forbidden and required dependency"
-            name
+            (Atom.to_string name)
     in
     ignore (
-      List.fold_left t ~init:String_map.empty ~f:(fun acc x ->
+      List.fold_left t ~init:Atom_map.empty ~f:(fun acc x ->
         match x with
         | Lib_dep.Direct s -> add Required s acc
         | Select { choices; _ } ->
           List.fold_left choices ~init:acc ~f:(fun acc c ->
-            let acc = String_set.fold c.Lib_dep.required ~init:acc ~f:(add Optional) in
-            String_set.fold c.forbidden ~init:acc ~f:(add Forbidden)))
-      : kind String_map.t);
+            let acc = Atom_set.fold c.Lib_dep.required ~init:acc
+                        ~f:(add Optional) in
+            Atom_set.fold c.forbidden ~init:acc ~f:(add Forbidden)))
+      : kind Atom_map.t);
     t
 end
 
@@ -463,25 +486,26 @@ module Buildable = struct
     field name Ordered_set_lang.t ~default:Ordered_set_lang.standard
 
   let v1 =
+    let a = Atom.unsafe_of_string in
     record_loc >>= fun loc ->
-    field "preprocess" Preprocess_map.t ~default:Preprocess_map.default
+    field (a "preprocess") Preprocess_map.t ~default:Preprocess_map.default
     >>= fun preprocess ->
-    field "preprocessor_deps" (list Dep_conf.t) ~default:[]
+    field (a "preprocessor_deps") (list Dep_conf.t) ~default:[]
     >>= fun preprocessor_deps ->
     (* CR-someday jdimino: remove this. There are still a few Jane Street packages using
        this *)
-    field "lint" Lint.t ~default:Lint.default
+    field (a "lint") Lint.t ~default:Lint.default
     >>= fun lint ->
-    modules_field "modules"
+    modules_field (a "modules")
     >>= fun modules ->
-    modules_field "modules_without_implementation"
+    modules_field (a "modules_without_implementation")
     >>= fun modules_without_implementation ->
-    field "libraries" Lib_deps.t ~default:[]
+    field (a "libraries") Lib_deps.t ~default:[]
     >>= fun libraries ->
-    field_oslu "flags"          >>= fun flags          ->
-    field_oslu "ocamlc_flags"   >>= fun ocamlc_flags   ->
-    field_oslu "ocamlopt_flags" >>= fun ocamlopt_flags ->
-    field "js_of_ocaml" (Js_of_ocaml.t) ~default:Js_of_ocaml.default >>= fun js_of_ocaml ->
+    field_oslu (a "flags")          >>= fun flags          ->
+    field_oslu (a "ocamlc_flags")   >>= fun ocamlc_flags   ->
+    field_oslu (a "ocamlopt_flags") >>= fun ocamlopt_flags ->
+    field (a "js_of_ocaml") (Js_of_ocaml.t) ~default:Js_of_ocaml.default >>= fun js_of_ocaml ->
     return
       { loc
       ; preprocess
@@ -505,15 +529,16 @@ end
 
 module Public_lib = struct
   type t =
-    { name    : string
+    { name    : Atom.t
     ; package : Package.t
     ; sub_dir : string option
     }
 
   let public_name_field pkgs =
-    map_validate (field_o "public_name" string) ~f:(function
+    map_validate (field_o (Atom.unsafe_of_string "public_name") atom)
+      ~f:(function
       | None -> Ok None
-      | Some s ->
+      | Some (A s as name) ->
         match String.split s ~on:'.' with
         | [] -> assert false
         | pkg :: rest ->
@@ -522,7 +547,7 @@ module Public_lib = struct
             Ok (Some
                   { package = pkg
                   ; sub_dir = if rest = [] then None else Some (String.concat rest ~sep:"/")
-                  ; name    = s
+                  ; name
                   })
           | Error _ as e -> e)
 end
@@ -536,18 +561,18 @@ module Library = struct
 
     let t =
       enum
-        [ "normal"       , Normal
-        ; "ppx_deriver"  , Ppx_deriver
-        ; "ppx_rewriter" , Ppx_rewriter
+        [ Atom.of_string "normal"       , Normal
+        ; Atom.of_string "ppx_deriver"  , Ppx_deriver
+        ; Atom.of_string "ppx_rewriter" , Ppx_rewriter
         ]
   end
 
   type t =
-    { name                     : string
+    { name                     : Atom.t
     ; public                   : Public_lib.t option
     ; synopsis                 : string option
     ; install_c_headers        : string list
-    ; ppx_runtime_libraries    : string list
+    ; ppx_runtime_libraries    : Atom.t list
     ; modes                    : Mode.Dict.Set.t
     ; kind                     : Kind.t
     ; c_flags                  : Ordered_set_lang.Unexpanded.t
@@ -557,7 +582,7 @@ module Library = struct
     ; library_flags            : Ordered_set_lang.Unexpanded.t
     ; c_library_flags          : Ordered_set_lang.Unexpanded.t
     ; self_build_stubs_archive : string option
-    ; virtual_deps             : string list
+    ; virtual_deps             : Atom.t list
     ; wrapped                  : bool
     ; optional                 : bool
     ; buildable                : Buildable.t
@@ -565,26 +590,27 @@ module Library = struct
     }
 
   let v1 pkgs =
+    let a = Atom.unsafe_of_string in
     record
       (Buildable.v1 >>= fun buildable ->
-       field      "name" library_name                                        >>= fun name                     ->
-       Public_lib.public_name_field pkgs                                     >>= fun public                   ->
-       field_o    "synopsis" string                                          >>= fun synopsis                 ->
-       field      "install_c_headers" (list string) ~default:[]              >>= fun install_c_headers        ->
-       field      "ppx_runtime_libraries" (list string) ~default:[]          >>= fun ppx_runtime_libraries    ->
-       field_oslu "c_flags"                                                  >>= fun c_flags                  ->
-       field_oslu "cxx_flags"                                                >>= fun cxx_flags                ->
-       field      "c_names" (list string) ~default:[]                        >>= fun c_names                  ->
-       field      "cxx_names" (list string) ~default:[]                      >>= fun cxx_names                ->
-       field_oslu "library_flags"                                            >>= fun library_flags            ->
-       field_oslu "c_library_flags"                                          >>= fun c_library_flags          ->
-       field      "virtual_deps" (list string) ~default:[]                   >>= fun virtual_deps             ->
-       field      "modes" Mode.Dict.Set.t ~default:Mode.Dict.Set.all         >>= fun modes                    ->
-       field      "kind" Kind.t ~default:Kind.Normal                         >>= fun kind                     ->
-       field      "wrapped" bool ~default:true                               >>= fun wrapped                  ->
-       field_b    "optional"                                                 >>= fun optional                 ->
-       field      "self_build_stubs_archive" (option string) ~default:None   >>= fun self_build_stubs_archive ->
-       field_b    "no_dynlink"                                               >>= fun no_dynlink               ->
+       field      (a "name") library_name      >>= fun name ->
+       Public_lib.public_name_field pkgs       >>= fun public ->
+       field_o    (a "synopsis") string        >>= fun synopsis ->
+       field      (a "install_c_headers") (list string) ~default:[]          >>= fun install_c_headers        ->
+       field      (a "ppx_runtime_libraries") (list atom) ~default:[]          >>= fun ppx_runtime_libraries    ->
+       field_oslu (a "c_flags")                                                  >>= fun c_flags                  ->
+       field_oslu (a "cxx_flags")                                                >>= fun cxx_flags                ->
+       field      (a "c_names") (list string) ~default:[]                        >>= fun c_names                  ->
+       field      (a "cxx_names") (list string) ~default:[]                      >>= fun cxx_names                ->
+       field_oslu (a "library_flags")                                            >>= fun library_flags            ->
+       field_oslu (a "c_library_flags")                                          >>= fun c_library_flags          ->
+       field      (a "virtual_deps") (list atom) ~default:[]                   >>= fun virtual_deps             ->
+       field      (a "modes") Mode.Dict.Set.t ~default:Mode.Dict.Set.all         >>= fun modes                    ->
+       field      (a "kind") Kind.t ~default:Kind.Normal                         >>= fun kind                     ->
+       field      (a "wrapped") bool ~default:true                               >>= fun wrapped                  ->
+       field_b    (a "optional")                                                 >>= fun optional                 ->
+       field      (a "self_build_stubs_archive") (option string) ~default:None   >>= fun self_build_stubs_archive ->
+       field_b    (a "no_dynlink")                                               >>= fun no_dynlink               ->
        return
          { name
          ; public
@@ -613,10 +639,11 @@ module Library = struct
     | _            -> true
 
   let stubs_archive t ~dir ~ext_lib =
-    Path.relative dir (sprintf "lib%s_stubs%s" t.name ext_lib)
+    Path.relative dir (sprintf "lib%s_stubs%s" (Atom.to_string t.name) ext_lib)
 
   let all_lib_deps t =
-    List.map t.virtual_deps ~f:(fun s -> Lib_dep.Direct s) @ t.buildable.libraries
+    List.map t.virtual_deps ~f:(fun s -> Lib_dep.Direct s)
+    @ t.buildable.libraries
 
   let best_name t =
     match t.public with
@@ -632,8 +659,8 @@ module Install_conf = struct
 
   let file sexp =
     match sexp with
-    | Atom (_, src) -> { src; dst = None }
-    | List (_, [Atom (_, src); Atom (_, "as"); Atom (_, dst)]) ->
+    | Atom (_, A src) -> { src; dst = None }
+    | List (_, [Atom (_, A src); Atom (_, A "as"); Atom (_, A dst)]) ->
       { src; dst = Some dst }
     | _ ->
       of_sexp_error sexp
@@ -646,9 +673,10 @@ module Install_conf = struct
     }
 
   let v1 pkgs =
+    let a = Atom.unsafe_of_string in
     record
-      (field   "section" Install.Section.t >>= fun section ->
-       field   "files"   (list file)       >>= fun files ->
+      (field   (a "section") Install.Section.t >>= fun section ->
+       field   (a "files")   (list file)       >>= fun files ->
        Scope.package_field pkgs             >>= fun package ->
        return
          { section
@@ -659,7 +687,7 @@ end
 
 module Executables = struct
   type t =
-    { names            : (Loc.t * string) list
+    { names            : (Loc.t * Atom.t) list
     ; link_executables : bool
     ; link_flags       : Ordered_set_lang.Unexpanded.t
     ; modes            : Mode.Dict.Set.t
@@ -667,10 +695,11 @@ module Executables = struct
     }
 
   let common_v1 pkgs names public_names ~multi =
+    let a = Atom.unsafe_of_string in
     Buildable.v1 >>= fun buildable ->
-    field      "link_executables"   bool ~default:true >>= fun link_executables ->
-    field_oslu "link_flags"                            >>= fun link_flags ->
-    map_validate (field "modes" Mode.Dict.Set.t ~default:Mode.Dict.Set.all)
+    field      (a "link_executables")   bool ~default:true >>= fun link_executables ->
+    field_oslu (a "link_flags")                            >>= fun link_flags ->
+    map_validate (field (a "modes") Mode.Dict.Set.t ~default:Mode.Dict.Set.all)
       ~f:(fun modes ->
         if Mode.Dict.Set.is_empty modes then
           Error "No compilation mode defined."
@@ -691,12 +720,13 @@ module Executables = struct
         ~f:(fun (_, name) pub ->
           match pub with
           | None -> None
-          | Some pub -> Some ({ Install_conf. src = name ^ ext; dst = Some pub }))
+          | Some pub -> Some ({ Install_conf. src = Atom.to_string name ^ ext;
+                                dst = Some (Atom.to_string pub) }))
       |> List.filter_map ~f:(fun x -> x)
     in
     match to_install with
     | [] ->
-      (field_o "package" Sexp.Ast.loc >>= function
+      (field_o (a "package") Sexp.Ast.loc >>= function
        | None -> return (t, None)
        | Some loc ->
          Loc.warn loc "This field is useless without a (public_name%s ...) field."
@@ -707,14 +737,15 @@ module Executables = struct
       return (t, Some { Install_conf. section = Bin; files; package })
 
   let public_name sexp =
-    match string sexp with
-    | "-" -> None
+    match atom sexp with
+    | A "-" -> None
     | s   -> Some s
 
   let v1_multi pkgs =
+    let a = Atom.unsafe_of_string in
     record
-      (field "names" (list (located string)) >>= fun names ->
-       map_validate (field_o "public_names" (list public_name)) ~f:(function
+      (field (a "names") (list (located atom)) >>= fun names ->
+       map_validate (field_o (a "public_names") (list public_name)) ~f:(function
          | None -> Ok (List.map names ~f:(fun _ -> None))
          | Some public_names ->
            if List.length public_names = List.length names then
@@ -726,9 +757,10 @@ module Executables = struct
        common_v1 pkgs names public_names ~multi:true)
 
   let v1_single pkgs =
+    let a = Atom.unsafe_of_string in
     record
-      (field   "name" (located string) >>= fun name ->
-       field_o "public_name" string >>= fun public_name ->
+      (field   (a "name") (located atom) >>= fun name ->
+       field_o (a "public_name") atom >>= fun public_name ->
        common_v1 pkgs [name] [public_name] ~multi:false)
 end
 
@@ -751,13 +783,13 @@ module Rule = struct
 
     let t =
       enum
-        [ "standard"           , Standard
-        ; "fallback"           , Fallback
-        ; "promote"            , Promote
-        ; "promote-until-clean", Promote_but_delete_on_clean
+        [ Atom.of_string "standard"           , Standard
+        ; Atom.of_string "fallback"           , Fallback
+        ; Atom.of_string "promote"            , Promote
+        ; Atom.of_string "promote-until-clean", Promote_but_delete_on_clean
         ]
 
-    let field = field "mode" t ~default:Standard
+    let field = field (Atom.of_string "mode") t ~default:Standard
   end
 
   type t =
@@ -770,6 +802,7 @@ module Rule = struct
     }
 
   let v1 sexp =
+    let a = Atom.unsafe_of_string in
     match sexp with
     | List (_, (Atom _ :: _)) ->
       { targets  = Infer
@@ -781,13 +814,13 @@ module Rule = struct
       }
     | _ ->
       record
-        (field "targets" (list file_in_current_dir)    >>= fun targets ->
-         field "deps"    (list Dep_conf.t) ~default:[] >>= fun deps ->
-         field "action"  Action.Unexpanded.t           >>= fun action ->
-         field "locks"   (list String_with_vars.t) ~default:[] >>= fun locks ->
+        (field (a "targets") (list file_in_current_dir)    >>= fun targets ->
+         field (a "deps")    (list Dep_conf.t) ~default:[] >>= fun deps ->
+         field (a "action")  Action.Unexpanded.t           >>= fun action ->
+         field (a "locks")   (list String_with_vars.t) ~default:[] >>= fun locks ->
          map_validate
-           (field_b "fallback" >>= fun fallback ->
-            field_o "mode" Mode.t >>= fun mode ->
+           (field_b (a "fallback") >>= fun fallback ->
+            field_o (a "mode") Mode.t >>= fun mode ->
             return (fallback, mode))
            ~f:(function
              | true, Some _ ->
@@ -816,7 +849,8 @@ module Rule = struct
     match sexp with
     | List (_, List (_, _) :: _) ->
       record
-        (field "modules" (list string) >>= fun modules ->
+        (field (Atom.unsafe_of_string "modules") (list string)
+         >>= fun modules ->
          Mode.field >>= fun mode ->
          return { modules; mode })
         sexp
@@ -874,10 +908,11 @@ module Menhir = struct
     }
 
   let v1 =
+    let a = Atom.unsafe_of_string in
     record
-      (field_o "merge_into" string >>= fun merge_into ->
-       field "flags" (list String_with_vars.t) ~default:[] >>= fun flags ->
-       field "modules" (list string) >>= fun modules ->
+      (field_o (a "merge_into") string >>= fun merge_into ->
+       field (a "flags") (list String_with_vars.t) ~default:[] >>= fun flags ->
+       field (a "modules") (list string) >>= fun modules ->
        Rule.Mode.field >>= fun mode ->
        return
          { merge_into
@@ -961,12 +996,13 @@ module Alias_conf = struct
     }
 
   let v1 pkgs =
+    let a = Atom.unsafe_of_string in
     record
-      (field "name" string                              >>= fun name ->
-       field "deps" (list Dep_conf.t) ~default:[]       >>= fun deps ->
-       field_o "package" (Scope.package pkgs)            >>= fun package ->
-       field_o "action" Action.Unexpanded.t  >>= fun action ->
-       field "locks" (list String_with_vars.t) ~default:[] >>= fun locks ->
+      (field (a "name") string                              >>= fun name ->
+       field (a "deps") (list Dep_conf.t) ~default:[]       >>= fun deps ->
+       field_o (a "package") (Scope.package pkgs)            >>= fun package ->
+       field_o (a "action") Action.Unexpanded.t  >>= fun action ->
+       field (a "locks") (list String_with_vars.t) ~default:[] >>= fun locks ->
        return
          { name
          ; deps
@@ -1012,26 +1048,27 @@ module Stanzas = struct
   exception Include_loop of Path.t * (Loc.t * Path.t) list
 
   let rec v1 pkgs ~file ~include_stack : Stanza.t list Sexp.Of_sexp.t =
+    let a = Atom.unsafe_of_string in
     sum
-      [ cstr "library"     (Library.v1 pkgs @> nil) (fun x -> [Library x])
-      ; cstr "executable"  (Executables.v1_single pkgs @> nil) execs
-      ; cstr "executables" (Executables.v1_multi  pkgs @> nil) execs
-      ; cstr_loc "rule"      (Rule.v1     @> nil) (fun loc x -> [Rule { x with loc }])
-      ; cstr_loc "ocamllex" (Rule.ocamllex_v1 @> nil)
+      [ cstr (a "library")     (Library.v1 pkgs @> nil) (fun x -> [Library x])
+      ; cstr (a "executable")  (Executables.v1_single pkgs @> nil) execs
+      ; cstr (a "executables") (Executables.v1_multi  pkgs @> nil) execs
+      ; cstr_loc (a "rule")      (Rule.v1     @> nil) (fun loc x -> [Rule { x with loc }])
+      ; cstr_loc (a "ocamllex") (Rule.ocamllex_v1 @> nil)
           (fun loc x -> rules (Rule.ocamllex_to_rule loc x))
-      ; cstr_loc "ocamlyacc" (Rule.ocamlyacc_v1 @> nil)
+      ; cstr_loc (a "ocamlyacc") (Rule.ocamlyacc_v1 @> nil)
           (fun loc x -> rules (Rule.ocamlyacc_to_rule loc x))
-      ; cstr_loc "menhir" (Menhir.v1 @> nil)
+      ; cstr_loc (a "menhir") (Menhir.v1 @> nil)
           (fun loc x -> rules (Menhir.v1_to_rule loc x))
-      ; cstr "install"     (Install_conf.v1 pkgs @> nil) (fun x -> [Install     x])
-      ; cstr "alias"       (Alias_conf.v1 pkgs @> nil)   (fun x -> [Alias       x])
-      ; cstr "copy_files" (Copy_files.v1 @> nil)
+      ; cstr (a "install")     (Install_conf.v1 pkgs @> nil) (fun x -> [Install     x])
+      ; cstr (a "alias")       (Alias_conf.v1 pkgs @> nil)   (fun x -> [Alias       x])
+      ; cstr (a "copy_files") (Copy_files.v1 @> nil)
           (fun glob -> [Copy_files {add_line_directive = false; glob}])
-      ; cstr "copy_files#" (Copy_files.v1 @> nil)
+      ; cstr (a "copy_files#") (Copy_files.v1 @> nil)
           (fun glob -> [Copy_files {add_line_directive = true; glob}])
       (* Just for validation and error messages *)
-      ; cstr "jbuild_version" (Jbuild_version.t @> nil) (fun _ -> [])
-      ; cstr_loc "include" (relative_file @> nil) (fun loc fn ->
+      ; cstr (a "jbuild_version") (Jbuild_version.t @> nil) (fun _ -> [])
+      ; cstr_loc (a "include") (relative_file @> nil) (fun loc fn ->
           let include_stack = (loc, file) :: include_stack in
           let dir = Path.parent file in
           let file = Path.relative dir fn in
@@ -1055,7 +1092,7 @@ module Stanzas = struct
   and parse ~default_version ~file ~include_stack pkgs sexps =
     let versions, sexps =
       List.partition_map sexps ~f:(function
-        | List (loc, [Atom (_, "jbuild_version"); ver]) ->
+        | List (loc, [Atom (_, A "jbuild_version"); ver]) ->
             Inl (Jbuild_version.t ver, loc)
           | sexp -> Inr sexp)
     in
@@ -1092,12 +1129,12 @@ module Stanzas = struct
                 (line_loc x))))
 
   let lib_names ts =
-    List.fold_left ts ~init:String_set.empty ~f:(fun acc (_, _, stanzas) ->
+    List.fold_left ts ~init:Atom_set.empty ~f:(fun acc (_, _, stanzas) ->
       List.fold_left stanzas ~init:acc ~f:(fun acc -> function
         | Stanza.Library lib ->
-          String_set.add lib.name
+          Atom_set.add lib.name
             (match lib.public with
              | None -> acc
-             | Some { name; _ } -> String_set.add name acc)
+             | Some { name; _ } -> Atom_set.add name acc)
         | _ -> acc))
 end

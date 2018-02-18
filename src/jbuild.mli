@@ -29,6 +29,8 @@ end
 (** Ppx preprocessors  *)
 module Pp : sig
   type t
+  val of_atom : Sexp.Atom.t -> t
+  val to_atom : t -> Sexp.Atom.t
   val of_string : string -> t
   val to_string : t -> string
 end
@@ -75,8 +77,8 @@ end
 
 module Lib_dep : sig
   type choice =
-    { required  : String_set.t
-    ; forbidden : String_set.t
+    { required  : Sexp.Atom_set.t
+    ; forbidden : Sexp.Atom_set.t
     ; file      : string
     }
 
@@ -87,11 +89,11 @@ module Lib_dep : sig
     }
 
   type t =
-    | Direct of string
+    | Direct of Sexp.Atom.t
     | Select of select
 
-  val to_lib_names : t -> string list
-  val direct : string -> t
+  val to_lib_names : t -> Sexp.Atom.t list
+  val direct : Sexp.Atom.t -> t
   val of_pp : Pp.t -> t
 end
 
@@ -134,7 +136,7 @@ end
 
 module Public_lib : sig
   type t =
-    { name    : string        (** Full public name *)
+    { name    : Sexp.Atom.t   (** Full public name *)
     ; package : Package.t     (** Package it is part of *)
     ; sub_dir : string option (** Subdirectory inside the installation directory *)
     }
@@ -149,11 +151,11 @@ module Library : sig
   end
 
   type t =
-    { name                     : string
+    { name                     : Sexp.Atom.t
     ; public                   : Public_lib.t option
     ; synopsis                 : string option
     ; install_c_headers        : string list
-    ; ppx_runtime_libraries    : string list
+    ; ppx_runtime_libraries    : Sexp.Atom.t list
     ; modes                    : Mode.Dict.Set.t
     ; kind                     : Kind.t
     ; c_flags                  : Ordered_set_lang.Unexpanded.t
@@ -163,7 +165,7 @@ module Library : sig
     ; library_flags            : Ordered_set_lang.Unexpanded.t
     ; c_library_flags          : Ordered_set_lang.Unexpanded.t
     ; self_build_stubs_archive : string option
-    ; virtual_deps             : string list
+    ; virtual_deps             : Sexp.Atom.t list
     ; wrapped                  : bool
     ; optional                 : bool
     ; buildable                : Buildable.t
@@ -173,7 +175,7 @@ module Library : sig
   val has_stubs : t -> bool
   val stubs_archive : t -> dir:Path.t -> ext_lib:string -> Path.t
   val all_lib_deps : t -> Lib_deps.t
-  val best_name : t -> string
+  val best_name : t -> Sexp.Atom.t
 end
 
 module Install_conf : sig
@@ -191,7 +193,7 @@ end
 
 module Executables : sig
   type t =
-    { names            : (Loc.t * string) list
+    { names            : (Loc.t * Sexp.Atom.t) list
     ; link_executables : bool
     ; link_flags       : Ordered_set_lang.Unexpanded.t
     ; modes            : Mode.Dict.Set.t
@@ -279,5 +281,5 @@ module Stanzas : sig
     -> Scope.t
     -> Sexp.Ast.t list
     -> t
-  val lib_names : (_ * _ * t) list -> String_set.t
+  val lib_names : (_ * _ * t) list -> Sexp.Atom_set.t
 end

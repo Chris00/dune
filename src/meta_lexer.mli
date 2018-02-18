@@ -1,5 +1,5 @@
 type token =
-  | Name   of string
+  | Name   of Sexp.Atom.t
   | String of string
   | Minus
   | Lparen

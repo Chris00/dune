@@ -1,5 +1,7 @@
 open Import
 open Jbuild
+module Atom = Sexp.Atom
+module Atom_map = Sexp.Atom_map
 
 module A = Action
 module Pset = Path.Set
@@ -117,7 +119,7 @@ let create
         open Sexp.Of_sexp
         let t dir sexp =
           let scope = Lib_db.find_scope libs ~dir in
-          List.map (list string sexp) ~f:(Lib_db.Scope.find_exn scope)
+          List.map (list atom sexp) ~f:(Lib_db.Scope.find_exn scope)
       end)
   in
   let artifacts =
@@ -224,14 +226,14 @@ module Libs = struct
   open Lib_db
 
   let vrequires t ~dir ~item =
-    let fn = Path.relative dir (item ^ ".requires.sexp") in
+    let fn = Path.relative dir (Atom.to_string item ^ ".requires.sexp") in
     Build.Vspec.T (fn, t.libs_vfile)
 
   let load_requires t ~dir ~item =
     Build.vpath (vrequires t ~dir ~item)
 
   let vruntime_deps t ~dir ~item =
-    let fn = Path.relative dir (item ^ ".runtime-deps.sexp") in
+    let fn = Path.relative dir (Atom.to_string item ^ ".runtime-deps.sexp") in
     Build.Vspec.T (fn, t.libs_vfile)
 
   let load_runtime_deps t ~dir ~item =
@@ -294,7 +296,7 @@ module Libs = struct
   let real_requires t ~dir ~scope ~dep_kind ~item ~libraries ~preprocess
         ~virtual_deps =
     let all_pps =
-      List.map (Preprocess_map.pps preprocess) ~f:Pp.to_string
+      List.map (Preprocess_map.pps preprocess) ~f:Pp.to_atom
     in
     let vrequires = vrequires t ~dir ~item in
     add_rule t
@@ -341,7 +343,7 @@ module Libs = struct
        Build.store_vfile vruntime_deps)
 
   let lib_files_alias ~dir ~name ~ext =
-    Alias.make (sprintf "lib-%s%s-all" name ext) ~dir
+    Alias.make (sprintf "lib-%s%s-all" (Atom.to_string name) ext) ~dir
 
   let setup_file_deps_alias t ((dir, lib) : Lib.Internal.t) ~ext files =
     add_alias_deps t (lib_files_alias ~dir ~name:lib.name ~ext) files
@@ -439,7 +441,7 @@ module Pkg_version = struct
 
   module V = Vfile_kind.Make(struct type t = string option end)
       (functor (C : Sexp.Combinators) -> struct
-        let t = C.option C.atom
+        let t = C.option C.string
       end)
 
   let spec sctx (p : Package.t) =
@@ -485,7 +487,7 @@ module Action = struct
     }
 
   let add_lib_dep acc lib kind =
-    acc.lib_deps <- String_map.add acc.lib_deps ~key:lib ~data:kind
+    acc.lib_deps <- Atom_map.add acc.lib_deps ~key:lib ~data:kind
 
   let add_fail acc fail =
     acc.failures <- fail :: acc.failures;
@@ -522,7 +524,7 @@ module Action = struct
   let expand_step1 sctx ~dir ~dep_kind ~scope ~targets_written_by_user ~map_exe t =
     let acc =
       { failures  = []
-      ; lib_deps  = String_map.empty
+      ; lib_deps  = Atom_map.empty
       ; sdeps     = Pset.empty
       ; ddeps     = String_map.empty
       }
@@ -552,6 +554,7 @@ module Action = struct
            to convert "findlib" to "lib" *)
         | Some (("lib"|"findlib"), s) -> begin
             let lib_dep, file = parse_lib_file ~loc s in
+            let lib_dep = Atom.of_string lib_dep in
             add_lib_dep acc lib_dep dep_kind;
             match
               Artifacts.file_of_lib (artifacts sctx) ~from:dir
@@ -563,6 +566,7 @@ module Action = struct
         | Some ("libexec" , s) -> begin
             let sctx = host_sctx sctx in
             let lib_dep, file = parse_lib_file ~loc s in
+            let lib_dep = Atom.of_string lib_dep in
             add_lib_dep acc lib_dep dep_kind;
             match
               Artifacts.file_of_lib (artifacts sctx) ~from:dir
@@ -583,6 +587,7 @@ module Action = struct
               end
           end
         | Some ("lib-available", lib) ->
+          let lib = Atom.of_string lib in
           add_lib_dep acc lib Optional;
           Some (str_exp (string_of_bool (
             (* XXX should we really be using the required_by of scope here? lib
@@ -754,16 +759,17 @@ end
 module PP = struct
   open Build.O
 
-  let pp_fname fn =
+  let pp_fname (Atom.A fn) =
     let fn, ext = Filename.split_extension fn in
     (* We need to to put the .pp before the .ml so that the compiler realises that
        [foo.pp.mli] is the interface for [foo.pp.ml] *)
-    fn ^ ".pp" ^ ext
+    Atom.unsafe_of_string(fn ^ ".pp" ^ ext)
 
   let pped_module ~dir (m : Module.t) ~f =
     let pped_file (kind : Ml_kind.t) (file : Module.File.t) =
       let pp_fname = pp_fname file.name in
-      f kind (Path.relative dir file.name) (Path.relative dir pp_fname);
+      f kind (Path.relative dir (Atom.to_string file.name))
+        (Path.relative dir (Atom.to_string pp_fname));
       {file with name = pp_fname}
     in
     { m with
@@ -771,7 +777,8 @@ module PP = struct
     ; intf = Option.map m.intf ~f:(pped_file Intf)
     }
 
-  let migrate_driver_main = "ocaml-migrate-parsetree.driver-main"
+  let migrate_driver_main =
+    Atom.unsafe_of_string "ocaml-migrate-parsetree.driver-main"
 
   let build_ppx_driver sctx ~scope ~dep_kind ~target pp_names ~driver =
     let ctx = sctx.context in
@@ -814,7 +821,7 @@ module PP = struct
                I need this library in order to use ppx rewriters.\n\
                See the manual for details.\n\
                Hint: opam install ocaml-migrate-parsetree"
-            migrate_driver_main
+            (Atom.to_string migrate_driver_main)
         }
         >>>
         libs
@@ -853,19 +860,21 @@ module PP = struct
         match List.rev names with
         | [] -> (None, [])
         | driver :: rest ->
-          (Some driver, List.sort rest ~cmp:String.compare @ [driver])
+           (Some (Atom.of_string driver),
+            List.sort rest ~cmp:String.compare @ [driver])
       in
       let scope =
         { With_required_by.
           data = scope
         ; required_by = [Preprocess names]
         } in
+      let names = List.map ~f:Atom.of_string names in (* XXX *)
       build_ppx_driver sctx names ~scope ~dep_kind:Required ~target:exe ~driver
     | _ -> ()
 
   let get_ppx_driver sctx ~scope pps =
     let (driver, names) =
-      match List.rev_map pps ~f:Pp.to_string with
+      match List.rev_map pps ~f:Pp.to_atom with
       | [] -> (None, [])
       | driver :: rest -> (Some driver, rest)
     in
@@ -888,7 +897,7 @@ module PP = struct
         | None -> (lib :: libs, true)
         | Some pub_name -> (pub_name :: libs, has_private_libs)
       ) ~init:([], driver_private) names in
-    let libs = List.sort ~cmp:String.compare libs in
+    let libs = List.sort ~cmp:Atom.compare libs in
     let names =
       match driver with
       | None -> libs
@@ -896,7 +905,7 @@ module PP = struct
     let key =
       match names with
       | [] -> "+none+"
-      | _  -> String.concat names ~sep:"+"
+      | _  -> String.concat (List.map ~f:Atom.to_string names) ~sep:"+"
     in
     let sctx = host_sctx sctx in
     let ppx_dir =
@@ -915,7 +924,7 @@ module PP = struct
   let cookie_library_name lib_name =
     match lib_name with
     | None -> []
-    | Some name -> ["--cookie"; sprintf "library-name=%S" name]
+    | Some (Sexp.Atom.A name) -> ["--cookie"; sprintf "library-name=%S" name]
 
   (* Generate rules for the reason modules in [modules] and return a
      a new module with only OCaml sources *)
@@ -935,7 +944,7 @@ module PP = struct
       | OCaml  -> f
       | Reason ->
         let ml = Module.File.to_ocaml f in
-        add_rule sctx (rule f.name ml.name);
+        add_rule sctx (rule (Atom.to_string f.name) (Atom.to_string ml.name));
         ml
     in
     { m with
@@ -965,18 +974,18 @@ module PP = struct
     let alias = Alias.lint ~dir in
     let add_alias fn build =
       Alias.add_action sctx.build_system alias build
-        ~stamp:(List [ Atom "lint"
+        ~stamp:(List [ Atom (Sexp.Atom.unsafe_of_string "lint")
                      ; Sexp.To_sexp.(option atom) lib_name
-                     ; Atom fn
+                     ; Quoted_string fn
                      ])
     in
-    match Preprocess_map.find source.name lint with
+    match Preprocess_map.find (Sexp.Atom.to_string source.name) lint with
     | No_preprocessing -> ()
     | Action action ->
       let action = Action.U.Chdir (root_var, action) in
       Module.iter source ~f:(fun _ (src : Module.File.t) ->
-        let src_path = Path.relative dir src.name in
-        add_alias src.name
+        let src_path = Path.relative dir (Atom.to_string src.name) in
+        add_alias (Atom.to_string src.name)
           (Build.path src_path
            >>^ (fun _ -> [src_path])
            >>> Action.run sctx
@@ -989,7 +998,7 @@ module PP = struct
     | Pps { pps; flags } ->
       let ppx_exe = get_ppx_driver sctx ~scope pps in
       Module.iter ast ~f:(fun kind src ->
-        let src_path = Path.relative dir src.name in
+        let src_path = Path.relative dir (Atom.to_string src.name) in
         let args =
           [ Arg_spec.As flags
           ; As (cookie_library_name lib_name)
@@ -1006,7 +1015,7 @@ module PP = struct
           else
             args
         in
-        add_alias src.name
+        add_alias (Atom.to_string src.name)
           (promote_correction ~uses_ppx_driver
              (Option.value_exn (Module.file ~dir source kind))
              (Build.run ~context:sctx.context (Ok ppx_exe) args))
@@ -1022,8 +1031,8 @@ module PP = struct
         (Deps.interpret sctx ~scope:scope.data ~dir preprocessor_deps)
     in
     let lint_module = lint_module sctx ~dir ~dep_kind ~lint ~lib_name ~scope in
-    String_map.map modules ~f:(fun (m : Module.t) ->
-      match Preprocess_map.find m.name preprocess with
+    Atom_map.map modules ~f:(fun (m : Module.t) ->
+      match Preprocess_map.find (Sexp.Atom.to_string m.name) preprocess with
       | No_preprocessing ->
         let ast = setup_reason_rules sctx ~dir m in
         lint_module ~ast ~source:m;
@@ -1075,7 +1084,7 @@ end
 
 module Eval_strings = Ordered_set_lang.Make(struct
     type t = string
-    let name t = t
+    let name t = Atom.of_string t (* XXX t = Atom.t? *)
   end)
 
 let expand_and_eval_set t ~scope ~dir set ~standard =

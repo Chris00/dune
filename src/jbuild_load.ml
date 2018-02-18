@@ -1,5 +1,6 @@
 open Import
 open Jbuild
+module Atom_map = Sexp.Atom_map
 
 let filter_stanzas ~ignore_promoted_rules stanzas =
   if ignore_promoted_rules then
@@ -122,7 +123,7 @@ end
       let pkgs =
         let required_by = [With_required_by.Entry.jbuild_file_in ~dir] in
         List.map requires ~f:(Findlib.find_exn context.findlib ~required_by)
-        |> Findlib.closure ~required_by ~local_public_libs:String_map.empty
+        |> Findlib.closure ~required_by ~local_public_libs:Atom_map.empty
       in
       let includes =
         List.fold_left pkgs ~init:Path.Set.empty ~f:(fun acc pkg ->

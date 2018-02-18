@@ -23,10 +23,10 @@ module Scope : sig
 
   type t
 
-  val find : t With_required_by.t -> string -> Lib.t option
-  val find_exn : t With_required_by.t -> string -> Lib.t
+  val find : t With_required_by.t -> Sexp.Atom.t -> Lib.t option
+  val find_exn : t With_required_by.t -> Sexp.Atom.t -> Lib.t
 
-  val lib_is_available : t With_required_by.t -> string -> bool
+  val lib_is_available : t With_required_by.t -> Sexp.Atom.t -> bool
 
   val root : t -> Path.t
   val name : t -> string
@@ -48,7 +48,7 @@ module Scope : sig
   val best_lib_dep_names_exn
     :  t With_required_by.t
     -> Jbuild.Lib_dep.t list
-    -> string list
+    -> Sexp.Atom.t list
 
   (** [all_ppx_runtime_deps_exn t deps] takes the transitive closure of [deps]
       and return the set of all the ppx runtime dependencies of these
@@ -56,7 +56,7 @@ module Scope : sig
   val all_ppx_runtime_deps_exn
     :  t With_required_by.t
     -> Jbuild.Lib_dep.t list
-    -> String_set.t
+    -> Sexp.Atom_set.t
 end
 
 val create
@@ -69,7 +69,7 @@ val create
 val internal_libs_without_non_installable_optional_ones : t -> Lib.Internal.t list
 
 (** For [Findlib.closure] *)
-val local_public_libs : t -> Path.t String_map.t
+val local_public_libs : t -> Path.t Sexp.Atom_map.t
 
 (** Unique name, even for internal libraries *)
 val unique_library_name : t -> Lib.t -> string

@@ -1,5 +1,6 @@
 open Import
 open Fiber.O
+module Atom_map = Sexp.Atom_map
 
 module Pset  = Path.Set
 module Pmap  = Path.Map
@@ -1080,7 +1081,8 @@ module Trace = struct
           Pmap.add acc ~key ~data)
         |> Path.Map.bindings
         |> List.map ~f:(fun (path, hash) ->
-          Sexp.List [ Atom (Path.to_string path); Atom (Digest.to_hex hash) ]))
+               Sexp.List [ Quoted_string (Path.to_string path);
+                           Atom (Sexp.Atom.of_digest hash) ]))
     in
     if Sys.file_exists "_build" then
       Io.write_file file (Sexp.to_string sexp)
@@ -1208,7 +1210,7 @@ let all_lib_deps t ~request =
   List.fold_left (rules_for_targets t targets) ~init:Pmap.empty
     ~f:(fun acc (rule : Internal_rule.t) ->
       let deps = Build_interpret.lib_deps rule.build in
-      if String_map.is_empty deps then
+      if Atom_map.is_empty deps then
         acc
       else
         let deps =
@@ -1223,7 +1225,7 @@ let all_lib_deps_by_context t ~request =
   let rules = rules_for_targets t targets in
   List.fold_left rules ~init:[] ~f:(fun acc (rule : Internal_rule.t) ->
     let deps = Build_interpret.lib_deps rule.build in
-    if String_map.is_empty deps then
+    if Atom_map.is_empty deps then
       acc
     else
       match Path.extract_build_context rule.dir with
@@ -1231,7 +1233,7 @@ let all_lib_deps_by_context t ~request =
       | Some (context, _) -> (context, deps) :: acc)
   |> String_map.of_alist_multi
   |> String_map.map ~f:(function
-    | [] -> String_map.empty
+    | [] -> Atom_map.empty
     | x :: l -> List.fold_left l ~init:x ~f:Build.merge_lib_deps)
 
 module Rule = struct
@@ -1370,7 +1372,7 @@ let get_collector t ~dir =
          "Build_system.get_collector called on external directory"
        else
          "Build_system.get_collector called on closed directory")
-      [ "dir", Path.sexp_of_t dir
+      [ Sexp.Atom.unsafe_of_string "dir", Path.sexp_of_t dir
       ]
 
 let add_rule t (rule : Build_interpret.Rule.t) =
@@ -1391,7 +1393,8 @@ let prefix_rules t prefix ~f =
   | [] -> ()
   | targets ->
     Sexp.code_error "Build_system.prefix_rules' prefix contains targets"
-      ["targets", Path.Set.sexp_of_t (Build_interpret.Target.paths targets)]
+      [Sexp.Atom.unsafe_of_string "targets",
+       Path.Set.sexp_of_t (Build_interpret.Target.paths targets)]
   end;
   prefix_rules' t (Some prefix) ~f
 

@@ -1,4 +1,5 @@
 open Import
+module Atom = Sexp.Atom
 
 let map_fname = ref (fun x -> x)
 
@@ -35,7 +36,7 @@ let report_with_backtrace ppf exn ~backtrace =
     false
   | Findlib.Findlib (Package_not_available { package; required_by; reason }) ->
     Format.fprintf ppf
-      "@{<error>Error@}: External library %S %s.@\n" package
+      "@{<error>Error@}: External library %S %s.@\n" (Atom.to_string package)
       (match reason with
        | Not_found -> "not found"
        | Hidden    -> "is hidden");
@@ -45,7 +46,7 @@ let report_with_backtrace ppf exn ~backtrace =
     | Hidden ->
       Format.fprintf ppf
         "External library %S is hidden because its 'exist_if' \
-         clause is not satisfied.\n" package
+         clause is not satisfied.\n" (Atom.to_string package)
     end;
     (match !Clflags.external_lib_deps_hint with
      | [] -> (* during bootstrap *) ()
@@ -63,7 +64,7 @@ let report_with_backtrace ppf exn ~backtrace =
        - it is required by external library %a\n\
       \  %a\
        This cannot work.\n"
-      package
+      (Atom.to_string package)
       (Utils.describe_target
          (Utils.jbuild_file_in ~dir:(Path.drop_optional_build_context defined_locally_in)))
       With_required_by.Entry.pp required_by

@@ -38,7 +38,7 @@ val jsoo_runtime_files : t list -> Path.t list
 val jsoo_archives : t -> Path.t list
 
 (** [public_name] if present, [name] if not *)
-val best_name : t -> string
+val best_name : t -> Sexp.Atom.t
 
 val describe : t -> string
 
@@ -47,7 +47,7 @@ val remove_dups_preserve_order : t list -> t list
 val ppx_runtime_libraries
   :  t
   -> required_by:With_required_by.Entry.t list
-  -> String_set.t
+  -> Sexp.Atom_set.t
 
 val requires
   :  t
@@ -56,15 +56,15 @@ val requires
 
 val scope : t -> [`Dir of Path.t | `External]
 
-val public_name : t -> string option
+val public_name : t -> Sexp.Atom.t option
 
 type local =
   { src: Path.t
-  ; name: string
+  ; name: Sexp.Atom.t
   }
 
 val local : t -> local option
 
 val unique_id : t -> string
 
-val exists_name : t -> f:(string -> bool) -> bool
+val exists_name : t -> f:(Sexp.Atom.t -> bool) -> bool

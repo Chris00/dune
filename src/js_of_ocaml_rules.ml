@@ -2,6 +2,7 @@ open Import
 open! No_io
 open Build.O
 
+module Atom = Sexp.Atom
 module SC = Super_context
 
 let separate_compilation_enabled () = !Clflags.dev_mode
@@ -20,7 +21,7 @@ let in_build_dir ~ctx =
 let runtime_file ~sctx ~dir fname =
   match
     Artifacts.file_of_lib (SC.artifacts sctx) ~from:dir
-      ~lib:"js_of_ocaml-compiler" ~file:fname
+      ~lib:(Atom.unsafe_of_string "js_of_ocaml-compiler") ~file:fname
   with
   | Error _ ->
     Arg_spec.Dyn (fun _ ->
@@ -73,7 +74,8 @@ let link_rule ~sctx ~dir ~runtime ~target =
         ) else (
           let lib_name = Option.value_exn (Lib.public_name lib) in
           List.map ~f:(fun js ->
-            in_build_dir ~ctx [lib_name ; Path.basename js]) jsoo_archives
+              in_build_dir ~ctx [Atom.to_string lib_name ; Path.basename js])
+            jsoo_archives
         )
       )
     in
@@ -119,7 +121,7 @@ let setup_separate_compilation_rules sctx components =
         let pkg =
           (* Special case for the stdlib because it is not referenced in the META *)
           match Findlib.Package.name pkg with
-          | "stdlib" -> Findlib.stdlib_with_archives ctx.findlib
+          | A "stdlib" -> Findlib.stdlib_with_archives ctx.findlib
           | _ -> pkg
         in
         let archives = Findlib.Package.archives pkg Byte in
@@ -127,9 +129,11 @@ let setup_separate_compilation_rules sctx components =
           let name = Path.basename fn in
           let src = Path.relative (Findlib.Package.dir pkg) name in
           let target =
-            in_build_dir ~ctx [ Findlib.Package.name pkg; sprintf "%s.js" name]
+            in_build_dir ~ctx [ Atom.to_string(Findlib.Package.name pkg);
+                                sprintf "%s.js" name]
           in
-          let dir = in_build_dir ~ctx [ Findlib.Package.name pkg ] in
+          let dir =
+            in_build_dir ~ctx [ Atom.to_string(Findlib.Package.name pkg )] in
           let spec = Arg_spec.Dep src in
           SC.add_rule sctx
             (Build.return (standard ())

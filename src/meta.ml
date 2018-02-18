@@ -1,7 +1,7 @@
 open Import
 
 type t =
-  { name    : string
+  { name    : string (* Cannot be an atom: Findlib uses it with "". *)
   ; entries : entry list
   }
 
@@ -55,12 +55,12 @@ module Parse = struct
   let rec predicates_and_action lb acc =
     match next lb with
     | Rparen -> (List.rev acc, action lb)
-    | Name n -> after_predicate lb (Pos n :: acc)
+    | Name (A n) -> after_predicate lb (Pos n :: acc)
     | Minus  ->
       let n =
         match next lb with
-        | Name p -> p
-        | _      -> error lb "name expected"
+        | Name (A p) -> p
+        | _          -> error lb "name expected"
       in
       after_predicate lb (Neg n :: acc)
     | _          -> error lb "name, '-' or ')' expected"
@@ -83,12 +83,12 @@ module Parse = struct
         List.rev acc
       else
         error lb "%d closing parentheses missing" depth
-    | Name "package" ->
+    | Name(A "package") ->
       let name = package_name lb in
       lparen lb;
       let sub_entries = entries lb (depth + 1) [] in
       entries lb depth (Package { name; entries = sub_entries } :: acc)
-    | Name var ->
+    | Name (A var) ->
       let predicates, action =
         match next lb with
         | Equal      -> ([], Set)
@@ -201,9 +201,12 @@ let builtins ~stdlib_dir =
         ; directory "+"
         ; rule "type_of_threads" [] Set "posix"
         ; rule "error" [Neg "mt"] Set "Missing -thread or -vmthread switch"
-        ; rule "error" [Neg "mt_vm"; Neg "mt_posix"] Set "Missing -thread or -vmthread switch"
-        ; Package (simple "vm" ["unix"] ~dir:"+vmthreads" ~archive_name:"threads")
-        ; Package (simple "posix" ["unix"] ~dir:"+threads" ~archive_name:"threads")
+        ; rule "error" [Neg "mt_vm"; Neg "mt_posix"] Set
+            "Missing -thread or -vmthread switch"
+        ; Package (simple "vm" ["unix"] ~dir:"+vmthreads"
+                     ~archive_name:"threads")
+        ; Package (simple "posix" ["unix"] ~dir:"+threads"
+                     ~archive_name:"threads")
         ]
     }
   in

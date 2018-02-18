@@ -1,10 +1,8 @@
 (** Utop rules *)
 
-open Import
-
 val exe_stanzas
   : Jbuild.Stanza.t list
-  -> (Jbuild.Executables.t * Module.t String_map.t) option
+  -> (Jbuild.Executables.t * Module.t Sexp.Atom_map.t) option
 (** Given a list of stanzas (from a directory with a jbuild file) return:
     1. a stanza for a utop toplevel with all the libraries linked in.
     2. an entry module that will be used to create the toplevel *)

@@ -1,6 +1,8 @@
 open Import
 open Jbuild
 open Meta
+module Atom = Sexp.Atom
+module Atom_set = Sexp.Atom_set
 
 module Pub_name = struct
   type t =
@@ -36,7 +38,8 @@ type item =
     Lib of Lib_db.Scope.t With_required_by.t * Pub_name.t * Library.t
 
 let string_of_deps l =
-  String.concat (List.sort l ~cmp:String.compare) ~sep:" "
+  let l = List.sort l ~cmp:Atom.compare in
+  String.concat (List.map ~f:Atom.to_string l) ~sep:" "
 
 let rule var predicates action value =
   Rule { var; predicates; action; value }
@@ -76,7 +79,7 @@ let gen_lib pub_name (lib : Library.t) ~lib_deps ~ppx_runtime_deps:ppx_rt_deps
     ; [ description desc
       ; requires ~preds lib_deps
       ]
-    ; archives ~preds lib.name
+    ; archives ~preds (Atom.to_string lib.name)
     ; (match ppx_rt_deps with
        | [] -> []
        | _ ->
@@ -131,7 +134,7 @@ let gen ~package ~scope ~version ~stanzas =
       | Library ({ public = Some { name; package = p; _ }; _ } as lib)
         when p.name = package ->
         let scope = Lib_db.Scope.required_in_jbuild scope ~jbuild_dir:dir in
-        Some (Lib (scope, Pub_name.parse name, lib))
+        Some (Lib (scope, Pub_name.parse (Atom.to_string name), lib))
       | _ ->
         None)
   in
@@ -149,7 +152,7 @@ let gen ~package ~scope ~version ~stanzas =
         | [] -> lib_deps
         | pps ->
           lib_deps @
-          String_set.elements
+          Atom_set.elements
             (Lib_db.Scope.all_ppx_runtime_deps_exn scope (List.map pps ~f:Lib_dep.of_pp))
       in
       let ppx_runtime_deps =
@@ -166,10 +169,10 @@ let gen ~package ~scope ~version ~stanzas =
          Sigh...
       *)
       let ppx_runtime_deps_for_deprecated_method = lazy (
-        String_set.union
-          (String_set.of_list ppx_runtime_deps)
+        Atom_set.union
+          (Atom_set.of_list ppx_runtime_deps)
           (Lib_db.Scope.all_ppx_runtime_deps_exn scope lib.buildable.libraries)
-        |> String_set.elements)
+        |> Atom_set.elements)
       in
       (pub_name,
        gen_lib pub_name lib ~lib_deps ~ppx_runtime_deps ~version

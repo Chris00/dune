@@ -3,9 +3,11 @@ open Jbuild
 open Build.O
 open! No_io
 
-let exe_name = "utop"
-let module_name = String.capitalize_ascii exe_name
-let module_filename = exe_name ^ ".ml"
+module Atom = Sexp.Atom
+
+let exe_name = Atom.unsafe_of_string "utop"
+let module_name = Atom.capitalize exe_name
+let module_filename = Atom.(exe_name ^ unsafe_of_string ".ml")
 
 let pp_ml fmt include_dirs =
   let pp_include fmt =
@@ -19,7 +21,7 @@ let pp_ml fmt include_dirs =
   Format.fprintf fmt "@.UTop_main.main ();@."
 
 let add_module_rules sctx ~dir lib_requires =
-  let path = Path.relative dir module_filename in
+  let path = Path.relative dir (Atom.to_string module_filename) in
   let utop_ml =
     lib_requires
     >>^ (fun libs ->
@@ -41,9 +43,9 @@ let utop_of_libs (libs : Library.t list) =
   ; link_executables = true
   ; link_flags = Ordered_set_lang.Unexpanded.t (
       Sexp.add_loc ~loc:Loc.none
-        (List [ Atom "-linkall"
-              ; Atom "-warn-error"
-              ; Atom "-31" ])
+        (List [ Atom (Atom.unsafe_of_string "-linkall")
+              ; Atom (Atom.unsafe_of_string "-warn-error")
+              ; Atom (Atom.unsafe_of_string "-31") ])
     )
   ; modes = Mode.Dict.Set.of_list [Mode.Byte]
   ; buildable =
@@ -53,7 +55,8 @@ let utop_of_libs (libs : Library.t list) =
           Ordered_set_lang.t (List (Loc.none, [Atom (Loc.none, module_name)]))
       ; modules_without_implementation = Ordered_set_lang.standard
       ; libraries =
-          (Lib_dep.direct "utop") :: (List.map libs ~f:(fun lib ->
+          (Lib_dep.direct (Atom.unsafe_of_string"utop"))
+          :: (List.map libs ~f:(fun lib ->
             Lib_dep.direct lib.Library.name))
       ; preprocess = Preprocess_map.no_preprocessing
       ; lint = Lint.no_lint
@@ -76,7 +79,7 @@ let exe_stanzas stanzas =
   | [] -> None
   | libs ->
     let all_modules =
-      String_map.of_alist_exn
+      Sexp.Atom_map.of_alist_exn
         [ module_name
         , { Module.
             name = module_name
@@ -92,7 +95,7 @@ let exe_stanzas stanzas =
 let utop_exe_dir ~dir = Path.relative dir ".utop"
 
 let utop_exe dir =
-  Path.relative (utop_exe_dir ~dir) exe_name
+  Path.relative (utop_exe_dir ~dir) (Atom.to_string exe_name)
   (* Use the [.exe] version. As the utop executable is declared with
      [(modes (byte))], the [.exe] correspond the bytecode linked in
      custom mode. We do that so that it works without hassle when

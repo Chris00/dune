@@ -4,7 +4,7 @@ open Import
 
 module Package_not_available : sig
   type t =
-    { package     : string
+    { package     : Sexp.Atom.t
     ; required_by : With_required_by.Entry.t list
     ; reason      : reason
     }
@@ -19,7 +19,7 @@ end
 
 module External_dep_conflicts_with_local_lib : sig
   type t =
-    { package             : string
+    { package             : Sexp.Atom.t
     ; required_by         : With_required_by.Entry.t
     ; required_locally_in : With_required_by.Entry.t list
     ; defined_locally_in  : Path.t
@@ -57,7 +57,7 @@ module Package : sig
   (** Representation of a findlib package *)
   type t
 
-  val name        : t -> string
+  val name        : t -> Sexp.Atom.t
   val dir         : t -> Path.t
   val version     : t -> string
   val description : t -> string
@@ -101,12 +101,12 @@ val root_package_name : string -> string
 val closure
   :  Package.t list
   -> required_by:With_required_by.Entry.t list
-  -> local_public_libs:Path.t String_map.t
+  -> local_public_libs:Path.t Sexp.Atom_map.t
   -> Package.t list
 val closed_ppx_runtime_deps_of
   :  Package.t list
   -> required_by:With_required_by.Entry.t list
-  -> local_public_libs:Path.t String_map.t
+  -> local_public_libs:Path.t Sexp.Atom_map.t
   -> Package.t list
 
 val root_packages : t -> string list
@@ -117,6 +117,6 @@ val stdlib_with_archives : t -> Package.t
 
 module Config : sig
   type t
-  val load : Path.t -> toolchain:string -> context:string -> t
+  val load : Path.t -> toolchain:string -> context:Sexp.Atom.t -> t
   val get : t -> string -> string
 end

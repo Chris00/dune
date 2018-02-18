@@ -9,11 +9,14 @@ module Entry = struct
 
   let jbuild_file_in ~dir = Path (Utils.jbuild_file_in ~dir)
 
+  let atom_pps = Sexp.atom "pps"
+
   let to_string = function
     | Path p -> Utils.describe_target p
     | Alias p -> "alias " ^ Utils.describe_target p
     | Library s -> sprintf "library %S" s
-    | Preprocess l -> Sexp.to_string (List [Atom "pps"; Sexp.To_sexp.(list atom) l])
+    | Preprocess l ->
+       Sexp.to_string (List [atom_pps; Sexp.To_sexp.(list string) l])
 
   let pp ppf x =
     Format.pp_print_string ppf (to_string x)

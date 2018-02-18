@@ -34,18 +34,18 @@ module Section = struct
   let t =
     let open Sexp.Of_sexp in
     enum
-      [ "lib"        , Lib
-      ; "libexec"    , Libexec
-      ; "bin"        , Bin
-      ; "sbin"       , Sbin
-      ; "toplevel"   , Toplevel
-      ; "share"      , Share
-      ; "share_root" , Share_root
-      ; "etc"        , Etc
-      ; "doc"        , Doc
-      ; "stublibs"   , Stublibs
-      ; "man"        , Man
-      ; "misc"       , Misc
+      [ Sexp.Atom.of_string "lib"        , Lib
+      ; Sexp.Atom.of_string "libexec"    , Libexec
+      ; Sexp.Atom.of_string "bin"        , Bin
+      ; Sexp.Atom.of_string "sbin"       , Sbin
+      ; Sexp.Atom.of_string "toplevel"   , Toplevel
+      ; Sexp.Atom.of_string "share"      , Share
+      ; Sexp.Atom.of_string "share_root" , Share_root
+      ; Sexp.Atom.of_string "etc"        , Etc
+      ; Sexp.Atom.of_string "doc"        , Doc
+      ; Sexp.Atom.of_string "stublibs"   , Stublibs
+      ; Sexp.Atom.of_string "man"        , Man
+      ; Sexp.Atom.of_string "misc"       , Misc
       ]
 
   module Paths = struct

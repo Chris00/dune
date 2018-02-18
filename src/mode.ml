@@ -7,8 +7,8 @@ let all = [Byte; Native]
 let t =
   let open Sexp.Of_sexp in
   enum
-    [ "byte"   , Byte
-    ; "native" , Native
+    [ Sexp.Atom.of_string "byte"   , Byte
+    ; Sexp.Atom.of_string "native" , Native
     ]
 
 let choose byte native = function

@@ -38,7 +38,7 @@ end
 module Env_var_map : Map.S with type key := Env_var.t
 
 type t =
-  { name : string
+  { name : Sexp.Atom.t
   ; kind : Kind.t
 
   ; (** [true] if this context is used for the .merlin files *)

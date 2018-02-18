@@ -1,6 +1,6 @@
 {
 type token =
-  | Name   of string
+  | Name   of Sexp.Atom.t
   | String of string
   | Minus
   | Lparen
@@ -18,7 +18,8 @@ rule token = parse
   | '#' [^ '\n']* { token lexbuf }
   | '\n' { Lexing.new_line lexbuf; token lexbuf }
 
-  | ['A'-'Z' 'a'-'z' '0'-'9' '_' '.']+ as s { Name s }
+  | ['A'-'Z' 'a'-'z' '0'-'9' '_' '.']+ as s {
+     Name(Sexp.Atom.unsafe_of_string s) }
   | '"'
       { Buffer.clear escaped_buf;
         string escaped_buf lexbuf }

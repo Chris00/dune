@@ -222,7 +222,7 @@ let compare = String.compare
 
 module Set = struct
   include String_set
-  let sexp_of_t t = Sexp.To_sexp.(list atom) (String_set.elements t)
+  let sexp_of_t t = Sexp.To_sexp.(list quoted_string) (String_set.elements t)
   let of_string_set = map
 end
 
@@ -270,7 +270,7 @@ let of_string ?error_loc s =
       s
 
 let t sexp = of_string (Sexp.Of_sexp.string sexp) ~error_loc:(Sexp.Ast.loc sexp)
-let sexp_of_t t = Sexp.Atom (to_string t)
+let sexp_of_t t = Sexp.Quoted_string (to_string t)
 
 let absolute fn =
   if is_local fn then
@@ -291,8 +291,8 @@ let reach t ~from =
   | false, _ -> t
   | true, false ->
     Sexp.code_error "Path.reach called with invalid combination"
-      [ "t"   , sexp_of_t t
-      ; "from", sexp_of_t from
+      [ Sexp.Atom.unsafe_of_string "t"   , sexp_of_t t
+      ; Sexp.Atom.unsafe_of_string "from", sexp_of_t from
       ]
   | true, true -> Local.reach t ~from
 
@@ -301,8 +301,8 @@ let reach_for_running t ~from =
   | false, _ -> t
   | true, false ->
     Sexp.code_error "Path.reach_for_running called with invalid combination"
-      [ "t"   , sexp_of_t t
-      ; "from", sexp_of_t from
+      [ Sexp.Atom.unsafe_of_string "t"   , sexp_of_t t
+      ; Sexp.Atom.unsafe_of_string "from", sexp_of_t from
       ]
   | true, true ->
     let s = Local.reach t ~from in
@@ -326,8 +326,8 @@ let is_descendant t ~of_ =
 let append a b =
   if not (is_local b) then
     Sexp.code_error "Path.append called with non-local second path"
-      [ "a", sexp_of_t a
-      ; "b", sexp_of_t b
+      [ Sexp.Atom.unsafe_of_string "a", sexp_of_t a
+      ; Sexp.Atom.unsafe_of_string "b", sexp_of_t b
       ];
   if is_local a then
     Local.append a b
@@ -391,7 +391,8 @@ let drop_build_context t =
 
 let drop_build_context_exn t =
   match extract_build_context t with
-  | None -> Sexp.code_error "Path.drop_build_context_exn" [ "t", sexp_of_t t ]
+  | None -> Sexp.code_error "Path.drop_build_context_exn"
+              [ Sexp.Atom.unsafe_of_string "t", sexp_of_t t ]
   | Some (_, t) -> t
 
 let drop_optional_build_context t =
@@ -424,7 +425,8 @@ let explode_exn t =
   else if is_local t then
     String.split t ~on:'/'
   else
-    Sexp.code_error "Path.explode_exn" ["path", Atom t]
+    Sexp.code_error "Path.explode_exn"
+      [Sexp.Atom.unsafe_of_string "path", Quoted_string t]
 
 let exists t = Sys.file_exists (to_string t)
 let readdir t = Sys.readdir (to_string t) |> Array.to_list
@@ -457,8 +459,8 @@ let insert_after_build_dir_exn =
   let error a b =
     Sexp.code_error
       "Path.insert_after_build_dir_exn"
-      [ "path"  , Atom a
-      ; "insert", Atom b
+      [ Sexp.Atom.unsafe_of_string "path"  , Quoted_string a
+      ; Sexp.Atom.unsafe_of_string "insert", Quoted_string b
       ]
   in
   fun a b ->

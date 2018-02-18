@@ -104,9 +104,10 @@ module List = struct
     | [] -> None
     | x :: l -> if f x then Some x else find l ~f
 
-  let longest_map l ~f =
-    fold_left l ~init:0 ~f:(fun acc x ->
-      max acc (String.length (f x)))
+  let max_map l ~f =
+    fold_left l ~init:0 ~f:(fun acc x -> max acc (f x))
+
+  let longest_map l ~f = max_map l ~f:(fun x -> String.length(f x))
 
   let longest l = longest_map l ~f:(fun x -> x)
 

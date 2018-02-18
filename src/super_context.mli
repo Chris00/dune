@@ -101,8 +101,10 @@ val unique_library_name : t -> Lib.t -> string
 
 module Libs : sig
 
-  val load_requires     : t -> dir:Path.t -> item:string -> (unit, Lib.t list) Build.t
-  val load_runtime_deps : t -> dir:Path.t -> item:string -> (unit, Lib.t list) Build.t
+  val load_requires     : t -> dir:Path.t -> item:Sexp.Atom.t ->
+                          (unit, Lib.t list) Build.t
+  val load_runtime_deps : t -> dir:Path.t -> item:Sexp.Atom.t ->
+                          (unit, Lib.t list) Build.t
 
   (** Add rules for (select ...) forms *)
   val add_select_rules
@@ -121,10 +123,10 @@ module Libs : sig
     -> dir:Path.t
     -> scope:Lib_db.Scope.t With_required_by.t
     -> dep_kind:Build.lib_dep_kind
-    -> item:string (* Library name or first exe name *)
+    -> item:Sexp.Atom.t (* Library name or first exe name *)
     -> libraries:Lib_deps.t
     -> preprocess:Preprocess_map.t
-    -> virtual_deps:string list
+    -> virtual_deps:Sexp.Atom.t list
     -> has_dot_merlin:bool
     -> (unit, Lib.t list) Build.t * (unit, Lib.t list) Build.t
 
@@ -134,9 +136,9 @@ module Libs : sig
     -> dir:Path.t
     -> scope:Lib_db.Scope.t With_required_by.t
     -> dep_kind:Build.lib_dep_kind
-    -> item:string (* Library name or first exe name *)
+    -> item:Sexp.Atom.t (* Library name or first exe name *)
     -> libraries:Lib_deps.t
-    -> ppx_runtime_libraries:string list
+    -> ppx_runtime_libraries:Sexp.Atom.t list
     -> unit
 
   (** [file_deps ~ext] is an arrow that record dependencies on all the files with
@@ -205,13 +207,13 @@ module PP : sig
     :  t
     -> dir:Path.t
     -> dep_kind:Build.lib_dep_kind
-    -> modules:Module.t String_map.t
+    -> modules:Module.t Sexp.Atom_map.t
     -> lint:Preprocess_map.t
     -> preprocess:Preprocess_map.t
     -> preprocessor_deps:Dep_conf.t list
-    -> lib_name:string option
+    -> lib_name:Sexp.Atom.t option
     -> scope:Lib_db.Scope.t With_required_by.t
-    -> Module.t String_map.t
+    -> Module.t Sexp.Atom_map.t
 
   (** Get a path to a cached ppx driver *)
   val get_ppx_driver
@@ -222,7 +224,7 @@ module PP : sig
 
   (** [cookie_library_name lib_name] is ["--cookie"; lib_name] if [lib_name] is not
       [None] *)
-  val cookie_library_name : string option -> string list
+  val cookie_library_name : Sexp.Atom.t option -> string list
 
   val gen_rules : t -> string list -> unit
 end

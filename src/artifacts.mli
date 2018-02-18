@@ -23,6 +23,6 @@ val binary
 val file_of_lib
   :  t
   -> from:Path.t
-  -> lib:string
+  -> lib:Sexp.Atom.t
   -> file:string
   -> (Path.t, fail) result

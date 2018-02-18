@@ -1,4 +1,6 @@
 open! Import
+module Atom = Sexp.Atom
+module Atom_map = Sexp.Atom_map
 
 module Ast = struct
   [@@@warning "-37"]
@@ -6,7 +8,7 @@ module Ast = struct
   type unexpanded = Unexpanded
   type ('a, _) t =
     | Element : 'a -> ('a, _) t
-    | Special : Loc.t * string -> ('a, _) t
+    | Special : Loc.t * Atom.t -> ('a, _) t  (* such as :standard *)
     | Union : ('a, 'b) t list -> ('a, 'b) t
     | Diff : ('a, 'b) t * ('a, 'b) t -> ('a, 'b) t
     | Include : String_with_vars.t -> ('a, unexpanded) t
@@ -24,16 +26,16 @@ let loc t = t.loc
 
 let parse_general sexp ~f =
   let rec of_sexp : Sexp.Ast.t -> _ = function
-    | Atom (loc, "\\") -> Loc.fail loc "unexpected \\"
-    | (Atom (_, "") | Quoted_string (_, _)) as t -> Ast.Element (f t)
-    | Atom (loc, s) as t ->
+    | Atom (loc, A "\\") -> Loc.fail loc "unexpected \\"
+    | (Atom (_, A "") | Quoted_string (_, _)) as t -> Ast.Element (f t)
+    | Atom (loc, (A s as a)) as t ->
       if s.[0] = ':' then
-        Special (loc, String.sub s ~pos:1 ~len:(String.length s - 1))
+        Special (loc, Atom.sub a ~pos:1 ~len:(String.length s - 1))
       else
         Element (f t)
     | List (_, sexps) -> of_sexps [] sexps
   and of_sexps acc = function
-    | Atom (_, "\\") :: sexps -> Diff (Union (List.rev acc), of_sexps [] sexps)
+    | Atom (_, A "\\") :: sexps -> Diff (Union (List.rev acc), of_sexps [] sexps)
     | elt :: sexps ->
       of_sexps (of_sexp elt :: acc) sexps
     | [] -> Union (List.rev acc)
@@ -43,7 +45,7 @@ let parse_general sexp ~f =
 let t sexp : t =
   let ast =
     parse_general sexp ~f:(function
-      | Atom (loc, s) | Quoted_string (loc, s) -> (loc, s)
+      | Atom (loc, A s) | Quoted_string (loc, s) -> (loc, s)
       | List _ -> assert false)
   in
   { ast
@@ -52,12 +54,12 @@ let t sexp : t =
 
 let is_standard t =
   match (t.ast : ast_expanded) with
-  | Ast.Special (_, "standard") -> true
+  | Ast.Special (_, A "standard") -> true
   | _ -> false
 
 module type Value = sig
   type t
-  val name  : t -> string
+  val name  : t -> Atom.t
 end
 
 module Make(Value : Value) = struct
@@ -77,7 +79,7 @@ module Make(Value : Value) = struct
         | Element (loc, s) ->
           let x = parse ~loc s in
           M.singleton x
-        | Special (loc, name) -> begin
+        | Special (loc, A name) -> begin
             match String_map.find name special_values with
             | Some x -> x
             | None   -> Loc.fail loc "undefined symbol %s" name
@@ -102,19 +104,19 @@ module Make(Value : Value) = struct
     end)
 
   module Unordered = Make(struct
-      type t = Value.t String_map.t
+      type t = Value.t Atom_map.t
 
-      let singleton x = String_map.singleton (Value.name x) x
+      let singleton x = Atom_map.singleton (Value.name x) x
 
       let union l =
-        List.fold_left l ~init:String_map.empty ~f:(fun acc t ->
-          String_map.merge acc t ~f:(fun _name x y ->
+        List.fold_left l ~init:Atom_map.empty ~f:(fun acc t ->
+          Atom_map.merge acc t ~f:(fun _name x y ->
             match x, y with
             | Some x, _ | _, Some x -> Some x
             | _ -> None))
 
       let diff a b =
-        String_map.merge a b ~f:(fun _name x y ->
+        Atom_map.merge a b ~f:(fun _name x y ->
           match x, y with
           | Some _, None -> x
           | _ -> None)
@@ -135,8 +137,10 @@ module Make(Value : Value) = struct
         ~special_values:(String_map.singleton "standard" standard)
 end
 
+let atom_standard = Atom.unsafe_of_string "standard"
+
 let standard =
-  { ast = Ast.Special (Loc.none, "standard")
+  { ast = Ast.Special (Loc.none, atom_standard)
   ; loc = None
   }
 
@@ -148,10 +152,10 @@ module Unexpanded = struct
       let open Ast in
       match t with
       | Element x -> Element x
-      | Union [Special (_, "include"); Element fn] ->
+      | Union [Special (_, A "include"); Element fn] ->
         Include (String_with_vars.t fn)
-      | Union [Special (loc, "include"); _]
-      | Special (loc, "include") ->
+      | Union [Special (loc, A "include"); _]
+      | Special (loc, A "include") ->
         Loc.fail loc "(:include expects a single element (do you need to quote the filename?)"
       | Special (l, s) -> Special (l, s)
       | Union l ->
@@ -194,8 +198,10 @@ module Unexpanded = struct
           | None ->
             Sexp.code_error
               "Ordered_set_lang.Unexpanded.expand"
-              [ "included-file", Atom fn
-              ; "files", Sexp.To_sexp.(list atom) (String_map.keys files_contents)
+              [ Sexp.Atom.unsafe_of_string "included-file",
+                Sexp.atom_or_quoted_string fn
+              ; Sexp.Atom.unsafe_of_string "files",
+                Sexp.To_sexp.(list string) (String_map.keys files_contents)
               ]
         in
         parse_general sexp ~f:(fun sexp ->

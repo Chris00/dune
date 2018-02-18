@@ -8,7 +8,7 @@ type t =
   { requires   : (unit, Lib.t list) Build.t
   ; flags      : (unit, string list) Build.t
   ; preprocess : Jbuild.Preprocess.t
-  ; libname    : string option
+  ; libname    : Sexp.Atom.t option
   ; source_dirs: Path.Set.t
   ; objs_dirs  : Path.Set.t
   }

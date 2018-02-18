@@ -30,77 +30,80 @@ struct
   include Ast
 
   let rec t sexp =
+    let a = Sexp.Atom.unsafe_of_string in
     let path = Path.t and string = String.t in
     sum
-      [ cstr_rest "run" (Program.t @> nil) string (fun prog args -> Run (prog, args))
-      ; cstr "chdir"    (path @> t @> nil)        (fun dn t -> Chdir (dn, t))
-      ; cstr "setenv"   (string @> string @> t @> nil)   (fun k v t -> Setenv (k, v, t))
-      ; cstr "with-stdout-to"  (path @> t @> nil) (fun fn t -> Redirect (Stdout, fn, t))
-      ; cstr "with-stderr-to"  (path @> t @> nil) (fun fn t -> Redirect (Stderr, fn, t))
-      ; cstr "with-outputs-to" (path @> t @> nil) (fun fn t -> Redirect (Outputs, fn, t))
-      ; cstr "ignore-stdout"   (t @> nil)      (fun t -> Ignore (Stdout, t))
-      ; cstr "ignore-stderr"   (t @> nil)      (fun t -> Ignore (Stderr, t))
-      ; cstr "ignore-outputs"  (t @> nil)      (fun t -> Ignore (Outputs, t))
-      ; cstr_rest "progn"      nil t         (fun l -> Progn l)
-      ; cstr "echo"           (string @> nil)         (fun x -> Echo x)
-      ; cstr "cat"            (path @> nil)         (fun x -> Cat x)
-      ; cstr "copy" (path @> path @> nil)              (fun src dst -> Copy (src, dst))
+      [ cstr_rest (a "run") (Program.t @> nil) string (fun prog args -> Run (prog, args))
+      ; cstr (a "chdir")    (path @> t @> nil)        (fun dn t -> Chdir (dn, t))
+      ; cstr (a "setenv")   (string @> string @> t @> nil)   (fun k v t -> Setenv (k, v, t))
+      ; cstr (a "with-stdout-to")  (path @> t @> nil) (fun fn t -> Redirect (Stdout, fn, t))
+      ; cstr (a "with-stderr-to")  (path @> t @> nil) (fun fn t -> Redirect (Stderr, fn, t))
+      ; cstr (a "with-outputs-to") (path @> t @> nil) (fun fn t -> Redirect (Outputs, fn, t))
+      ; cstr (a "ignore-stdout")   (t @> nil)      (fun t -> Ignore (Stdout, t))
+      ; cstr (a "ignore-stderr")   (t @> nil)      (fun t -> Ignore (Stderr, t))
+      ; cstr (a "ignore-outputs")  (t @> nil)      (fun t -> Ignore (Outputs, t))
+      ; cstr_rest (a "progn")      nil t         (fun l -> Progn l)
+      ; cstr (a "echo")           (string @> nil)         (fun x -> Echo x)
+      ; cstr (a "cat")            (path @> nil)         (fun x -> Cat x)
+      ; cstr (a "copy") (path @> path @> nil)              (fun src dst -> Copy (src, dst))
       (*
-         (* We don't expose symlink to the user yet since this might complicate things *)
-         ; cstr "symlink" (a @> a @> nil) (fun src dst -> Symlink (dst, Cat src))
-      *)
-      ; cstr "copy#" (path @> path @> nil) (fun src dst ->
-          Copy_and_add_line_directive (src, dst))
-      ; cstr_loc "copy-and-add-line-directive" (path @> path @> nil) (fun loc src dst ->
-          Loc.warn loc "copy-and-add-line-directive is deprecated, use copy# instead";
-          Copy_and_add_line_directive (src, dst))
-      ; cstr "copy#" (path @> path @> nil) (fun src dst ->
-          Copy_and_add_line_directive (src, dst))
-      ; cstr "system" (string @> nil) (fun cmd -> System cmd)
-      ; cstr "bash"   (string @> nil) (fun cmd -> Bash   cmd)
-      ; cstr "write-file" (path @> string @> nil) (fun fn s -> Write_file (fn, s))
-      ; cstr "diff" (path @> path @> nil)
+      (*         We don't expose symlink to the user yet since this might complicate things *)
+      ; cstr "sy mlink" (a @> a @> nil) (fun src dst -> Symlink (dst, Cat src))
+       *)
+      ; cstr (a "copy#") (path @> path @> nil) (fun src dst ->
+            Copy_and_add_line_directive (src, dst))
+      ; cstr_loc (a "copy-and-add-line-directive") (path @> path @> nil) (fun loc src dst ->
+            Loc.warn loc "copy-and-add-line-directive is deprecated, use copy# instead";
+            Copy_and_add_line_directive (src, dst))
+      ; cstr (a "copy#") (path @> path @> nil) (fun src dst ->
+            Copy_and_add_line_directive (src, dst))
+      ; cstr (a "system") (string @> nil) (fun cmd -> System cmd)
+      ; cstr (a "bash")   (string @> nil) (fun cmd -> Bash   cmd)
+      ; cstr (a "write-file") (path @> string @> nil) (fun fn s -> Write_file (fn, s))
+      ; cstr (a "diff") (path @> path @> nil)
           (fun file1 file2 -> Diff { optional = false; file1; file2 })
-      ; cstr "diff?" (path @> path @> nil)
+      ; cstr (a "diff?") (path @> path @> nil)
           (fun file1 file2 -> Diff { optional = true ; file1; file2 })
       ]
       sexp
 
   let rec sexp_of_t : _ -> Sexp.t =
+    let a = Sexp.Atom.unsafe_of_string in
     let path = Path.sexp_of_t and string = String.sexp_of_t in
     function
-    | Run (a, xs) -> List (Atom "run" :: Program.sexp_of_t a :: List.map xs ~f:string)
-    | Chdir (a, r) -> List [Atom "chdir" ; path a ; sexp_of_t r]
-    | Setenv (k, v, r) -> List [Atom "setenv" ; string k ; string v ; sexp_of_t r]
+    | Run (pgm, xs) -> List (Atom (a "run") :: Program.sexp_of_t pgm
+                             :: List.map xs ~f:string)
+    | Chdir (p, r) -> List [Atom (a "chdir") ; path p ; sexp_of_t r]
+    | Setenv (k, v, r) -> List [Atom (a "setenv") ; string k ; string v ;
+                                sexp_of_t r]
     | Redirect (outputs, fn, r) ->
-      List [ Atom (sprintf "with-%s-to" (Outputs.to_string outputs))
+      List [ Atom (a (sprintf "with-%s-to" (Outputs.to_string outputs)))
            ; path fn
            ; sexp_of_t r
            ]
     | Ignore (outputs, r) ->
-      List [ Atom (sprintf "ignore-%s" (Outputs.to_string outputs))
+      List [ Atom (a (sprintf "ignore-%s" (Outputs.to_string outputs)))
            ; sexp_of_t r
            ]
-    | Progn l -> List (Atom "progn" :: List.map l ~f:sexp_of_t)
-    | Echo x -> List [Atom "echo"; string x]
-    | Cat x -> List [Atom "cat"; path x]
-    | Copy (x, y) ->
-      List [Atom "copy"; path x; path y]
-    | Symlink (x, y) ->
-      List [Atom "symlink"; path x; path y]
+    | Progn l -> List (Atom (a "progn") :: List.map l ~f:sexp_of_t)
+    | Echo x -> List [Atom (a "echo"); string x]
+    | Cat x -> List [Atom (a "cat"); path x]
+    | Copy (x, y) -> List [Atom (a "copy"); path x; path y]
+    | Symlink (x, y) -> List [Atom (a "symlink"); path x; path y]
     | Copy_and_add_line_directive (x, y) ->
-      List [Atom "copy#"; path x; path y]
-    | System x -> List [Atom "system"; string x]
-    | Bash   x -> List [Atom "bash"; string x]
-    | Write_file (x, y) -> List [Atom "write-file"; path x; string y]
-    | Rename (x, y) -> List [Atom "rename"; path x; path y]
-    | Remove_tree x -> List [Atom "remove-tree"; path x]
-    | Mkdir x       -> List [Atom "mkdir"; path x]
-    | Digest_files paths -> List [Atom "digest-files"; List (List.map paths ~f:path)]
+      List [Atom (a "copy#"); path x; path y]
+    | System x -> List [Atom (a "system"); string x]
+    | Bash   x -> List [Atom (a "bash"); string x]
+    | Write_file (x, y) -> List [Atom (a "write-file"); path x; string y]
+    | Rename (x, y) -> List [Atom (a "rename"); path x; path y]
+    | Remove_tree x -> List [Atom (a "remove-tree"); path x]
+    | Mkdir x       -> List [Atom (a "mkdir"); path x]
+    | Digest_files paths -> List [Atom (a "digest-files");
+                                  List (List.map paths ~f:path)]
     | Diff { optional = false; file1; file2 } ->
-      List [Atom "diff"; path file1; path file2]
+      List [Atom (a "diff"); path file1; path file2]
     | Diff { optional = true; file1; file2 } ->
-      List [Atom "diff?"; path file1; path file2]
+      List [Atom (a "diff?"); path file1; path file2]
 
   let run prog args = Run (prog, args)
   let chdir path t = Chdir (path, t)
@@ -180,7 +183,7 @@ module Prog = struct
 
   let sexp_of_t = function
     | Ok s -> Path.sexp_of_t s
-    | Error (e : Not_found.t) -> Sexp.To_sexp.atom e.program
+    | Error (e : Not_found.t) -> Sexp.To_sexp.string e.program
 end
 
 module type Ast = Action_intf.Ast
@@ -192,7 +195,7 @@ module rec Ast : Ast = Ast
 module String_with_sexp = struct
   type t = string
   let t = Sexp.Of_sexp.string
-  let sexp_of_t = Sexp.To_sexp.atom
+  let sexp_of_t = Sexp.To_sexp.string
 end
 
 include Make_ast
@@ -345,7 +348,8 @@ module Unexpanded = struct
       Loc.fail loc
         "(mkdir ...) is not supported for paths outside of the workspace:\n\
         \  %a\n"
-        Sexp.pp (List [Atom "mkdir"; Path.sexp_of_t path])
+        Sexp.pp (List [Atom (Sexp.Atom.unsafe_of_string "mkdir");
+                       Path.sexp_of_t path])
 
   module Partial = struct
     module Program = Unresolved.Program
@@ -594,7 +598,7 @@ module Promotion = struct
       }
 
     let t = function
-      | Sexp.Ast.List (_, [src; Atom (_, "as"); dst]) ->
+      | Sexp.Ast.List (_, [src; Atom (_, A "as"); dst]) ->
         { src = Path.t src
         ; dst = Path.t dst
         }
@@ -602,7 +606,8 @@ module Promotion = struct
         Sexp.Of_sexp.of_sexp_errorf sexp "(<file> as <file>) expected"
 
     let sexp_of_t { src; dst } =
-      Sexp.List [Path.sexp_of_t src; Atom "as"; Path.sexp_of_t dst]
+      Sexp.List [Path.sexp_of_t src; Atom (Sexp.Atom.unsafe_of_string "as");
+                 Path.sexp_of_t dst]
 
     let db : t list ref = ref []
 
@@ -814,7 +819,7 @@ let rec exec t ~ectx ~dir ~env_extra ~stdout_to ~stderr_to =
        (* Internally we make sure never to do that, and [Unexpanded.*expand] check that *)
        Sexp.code_error
          "(mkdir ...) is not supported for paths outside of the workspace"
-         [ "mkdir", Path.sexp_of_t path ]
+         [ Sexp.Atom.unsafe_of_string "mkdir", Path.sexp_of_t path ]
      | Local path ->
        Path.Local.mkdir_p path);
     Fiber.return ()

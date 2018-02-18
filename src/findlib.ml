@@ -1,5 +1,7 @@
 open Import
 
+module Atom = Sexp.Atom
+module Atom_map = Sexp.Atom_map
 module P  = Variant
 module Ps = Variant.Set
 
@@ -94,7 +96,7 @@ module Config = struct
     let conf_file = Path.relative path (toolchain ^ ".conf") in
     if not (Path.exists conf_file) then
       die "@{<error>Error@}: ocamlfind toolchain %s isn't defined in %a \
-           (context: %s)" toolchain Path.pp path context;
+           (context: %s)" toolchain Path.pp path (Atom.to_string context);
     let vars =
       (Meta.simplify { name = ""
                      ; entries = Meta.load (Path.to_string conf_file)
@@ -110,7 +112,7 @@ end
 
 module Package_not_available = struct
   type t =
-    { package     : string
+    { package     : Atom.t
     ; required_by : With_required_by.Entry.t list
     ; reason      : reason
     }
@@ -129,7 +131,7 @@ end
 
 module External_dep_conflicts_with_local_lib = struct
   type t =
-    { package             : string
+    { package             : Atom.t
     ; required_by         : With_required_by.Entry.t
     ; required_locally_in : With_required_by.Entry.t list
     ; defined_locally_in  : Path.t
@@ -164,7 +166,7 @@ type t =
   }
 
 and package =
-  { name             : string
+  { name             : Atom.t
   ; unique_id        : int
   ; dir              : Path.t
   ; version          : string
@@ -232,7 +234,7 @@ let rec parse_package t ~name ~parent_dir ~vars =
      let requires         = Vars.get_words vars "requires"         preds in
      let ppx_runtime_deps = Vars.get_words vars "ppx_runtime_deps" preds in
      Ok
-      { name
+      { name = Atom.of_string name
       ; dir
       ; unique_id   = gen_package_unique_id ()
       ; version     = Vars.get vars "version" Ps.empty
@@ -249,7 +251,7 @@ let rec parse_package t ~name ~parent_dir ~vars =
   else
     Error
       { Package_not_available.
-        package     = name
+        package     = Atom.of_string name
       ; reason      = Hidden
       ; required_by = []
       })
@@ -262,7 +264,8 @@ and parse_and_acknowledge_meta t ~dir (meta : Meta.t) =
     let dir, pkg = parse_package t ~name:full_name ~parent_dir:dir ~vars in
     Hashtbl.add t.packages ~key:full_name ~data:pkg;
     List.iter meta.subs ~f:(fun (meta : Meta.Simplified.t) ->
-      loop ~dir ~full_name:(sprintf "%s.%s" full_name meta.name) meta)
+        let full_name = sprintf "%s.%s" full_name meta.name in
+        loop ~dir ~full_name meta)
   in
   loop ~dir ~full_name:meta.name (Meta.simplify meta)
 
@@ -298,7 +301,7 @@ and find_and_acknowledge_meta t ~fq_name =
   match loop t.path with
   | None ->
     Hashtbl.add t.packages ~key:root_name
-      ~data:(Error { package     = root_name
+      ~data:(Error { package     = Atom.of_string root_name
                    ; reason      = Not_found
                    ; required_by = []
                    })
@@ -314,7 +317,7 @@ and find_internal t name =
     | None ->
       let res : _ or_not_available =
         Error
-          { package     = name
+          { package     = Atom.of_string name
           ; required_by = []
           ; reason      = Not_found
           }
@@ -373,14 +376,15 @@ end
 
 module Closure =
   Top_closure.Make
-    (String)
+    (Atom)
     (struct
       type graph = unit
       type t = Package.t * With_required_by.Entry.t list
       let key (pkg, _) = pkg.name
       let deps (pkg, required_by) () =
         let required_by =
-          With_required_by.Entry.Library pkg.name :: required_by
+          With_required_by.Entry.Library (Atom.to_string pkg.name)
+          :: required_by
         in
         List.map (Package.requires pkg ~required_by)
           ~f:(fun x -> (x, required_by))
@@ -388,7 +392,7 @@ module Closure =
 
 let check_deps_consistency ~required_by ~local_public_libs deps =
   List.iter deps ~f:(fun pkg' ->
-    match String_map.find pkg'.name local_public_libs with
+    match Atom_map.find pkg'.name local_public_libs with
     | None -> ()
     | Some path ->
       raise (Findlib (External_dep_conflicts_with_local_lib
@@ -428,7 +432,8 @@ let closure pkgs ~required_by ~local_public_libs =
         | Error cycle ->
           Error
             (Dependency_cycle
-               { cycle       = List.map cycle ~f:(fun (p, _) -> p.name)
+               { cycle       = List.map cycle ~f:(fun (p, _) ->
+                                   Atom.to_string p.name)
                ; required_by = []
                })
         | exception (Findlib e) -> Error e)
@@ -468,7 +473,7 @@ let all_packages t =
     match data with
     | Ok    p -> p :: acc
     | Error _ -> acc)
-  |> List.sort ~cmp:(fun a b -> String.compare a.name b.name)
+  |> List.sort ~cmp:(fun a b -> Atom.compare a.name b.name)
 
 let all_unavailable_packages t =
   load_all_packages t;
@@ -477,7 +482,7 @@ let all_unavailable_packages t =
     | Ok    _ -> acc
     | Error n -> n :: acc)
   |> List.sort ~cmp:(fun a b ->
-    String.compare a.Package_not_available.package b.package)
+    Atom.compare a.Package_not_available.package b.package)
 
 let stdlib_with_archives t =
   let x = find_exn t ~required_by:[] "stdlib" in

@@ -1,5 +1,6 @@
 open Import
 open Build.Repr
+module Atom_map = Sexp.Atom_map
 
 module Pset = Path.Set
 module Pmap = Path.Map
@@ -111,7 +112,7 @@ let lib_deps =
         loop (get_if_file_exists_exn state) acc
       | Memo m -> loop m.t acc
   in
-  fun t -> loop (Build.repr t) String_map.empty
+  fun t -> loop (Build.repr t) Atom_map.empty
 
 let targets =
   let rec loop : type a b. (a, b) t -> Target.t list -> Target.t list = fun t acc ->
@@ -174,8 +175,9 @@ module Rule = struct
             match loc with
             | None ->
               Sexp.code_error "rule has targets in different directories"
-                [ "targets", Sexp.To_sexp.list Path.sexp_of_t
-                               (List.map targets ~f:Target.path)
+                [ Sexp.Atom.unsafe_of_string "targets",
+                  Sexp.To_sexp.list Path.sexp_of_t
+                    (List.map targets ~f:Target.path)
                 ]
             | Some loc ->
               Loc.fail loc

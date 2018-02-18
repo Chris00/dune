@@ -1,7 +1,5 @@
 (** ocamldep managenemt *)
 
-open Import
-
 module Dep_graph : sig
   type t
 
@@ -32,7 +30,7 @@ end
 val rules
   :  Super_context.t
   -> dir:Path.t
-  -> modules:Module.t String_map.t
+  -> modules:Module.t Sexp.Atom_map.t
   -> alias_module:Module.t option
   -> lib_interface_module:Module.t option
   -> Dep_graphs.t

@@ -1,17 +1,48 @@
 (** Parsing of s-expressions *)
 
 module Atom : sig
-  type t = string
+  type t = private A of string [@@unboxed]
+  (** Acceptable atoms are composed of chars in the range [' ' .. '~']
+     and must be nonempty. *)
 
-  (** Whether the atom must be escaped when serialized *)
-  val must_escape : t -> bool
+  val is_valid : string -> bool
+  (** [is_valid s] checks that [s] respects the constraints to be an atom. *)
 
-  (** Escape all special characters in the atom *)
-  val escaped : t -> string
+  val of_string : string -> t
+  (** Convert a string to an atom.  If the string contains invalid
+     characters, raise [Invalid_argument]. *)
 
-  (** [serialize t] is the serialized representation of [t], so either
-      [t] either [escaped t] surrounded by double quotes. *)
-  val serialize : t -> string
+  val of_int : int -> t
+  val of_float : float -> t
+  val of_bool : bool -> t
+  val of_int64 : Int64.t -> t
+  val of_digest : Digest.t -> t
+
+  val to_string : t -> string
+
+  val length : t -> int
+
+  val capitalize : t -> t
+
+  val uncapitalize : t -> t
+  (** [uncapitalize s] make the first char of [s] lowercase. *)
+
+  val chop_extension : t -> t
+  (** Same as [Filename.chop_extension] but for atoms. *)
+
+  val compare : t -> t -> int
+
+  val sub : t -> pos: int -> len: int -> t
+  (** Same as [String.sub] but for atoms. *)
+
+  val ( ^ ) : t -> t -> t
+  (** Same as [^] (string concatenation) but for atoms. *)
+
+  (**/**)
+  val unsafe_of_string : string -> t
+  (** [unsafe_of_string s] convert [s] to a [Atom.t] without checking
+     the invariant.  It is the user responsibility to do so. *)
+  (**/**)
 end
 
 module Loc : sig
@@ -26,6 +57,12 @@ type t =
   | Atom of Atom.t
   | Quoted_string of string
   | List of t list
+
+val atom : string -> t
+(** [atom s] convert the string [s] to an Atom.
+    @raise Invalid_argument if [s] does not satisfy [Atom.is_valid s]. *)
+
+val atom_or_quoted_string : string -> t
 
 (** Serialize a S-expression *)
 val to_string : t -> string
@@ -56,7 +93,7 @@ module Ast : sig
 
   module Token : sig
     type t =
-      | Atom   of Loc.t * string
+      | Atom   of Loc.t * Atom.t
       | String of Loc.t * string
       | Lparen of Loc.t
       | Rparen of Loc.t

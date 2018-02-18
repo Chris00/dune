@@ -1,16 +1,18 @@
 open Import
 open Jbuild
+module Atom = Sexp.Atom
+module Atom_map = Sexp.Atom_map
 
 type t =
   { context    : Context.t
   ; local_bins : Path.t String_map.t
-  ; local_libs : Public_lib.t String_map.t
+  ; local_libs : Public_lib.t Atom_map.t
   }
 
 let create (context : Context.t) l ~f =
   let bin_dir = Config.local_install_bin_dir ~context:context.name in
   let local_bins, local_libs =
-    List.fold_left l ~init:(String_map.empty, String_map.empty)
+    List.fold_left l ~init:(String_map.empty, Atom_map.empty)
       ~f:(fun acc x ->
         List.fold_left (f x) ~init:acc
           ~f:(fun (local_bins, local_libs) stanza ->
@@ -48,7 +50,7 @@ let create (context : Context.t) l ~f =
                local_libs)
             | Library { public = Some pub; _ } ->
               (local_bins,
-               String_map.add local_libs ~key:pub.name ~data:pub)
+               Atom_map.add local_libs ~key:pub.name ~data:pub)
             | _ ->
               (local_bins, local_libs)))
   in
@@ -75,7 +77,7 @@ let binary t ?hint name =
           }
 
 let file_of_lib t ~from ~lib ~file =
-  match String_map.find lib t.local_libs with
+  match Atom_map.find lib t.local_libs with
   | Some { package; sub_dir; _ } ->
     let lib_install_dir =
       Config.local_install_lib_dir ~context:t.context.name ~package:package.name
@@ -88,7 +90,7 @@ let file_of_lib t ~from ~lib ~file =
     Ok (Path.relative lib_install_dir file)
   | None ->
     match
-      Findlib.find t.context.findlib lib
+      Findlib.find t.context.findlib (Atom.to_string lib)
         ~required_by:[With_required_by.Entry.jbuild_file_in ~dir:from]
     with
     | Ok pkg ->

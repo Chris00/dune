@@ -3,6 +3,7 @@ open Build.O
 open! No_io
 
 module SC = Super_context
+module Atom = Sexp.Atom
 
 module Target : sig
   type t
@@ -37,7 +38,7 @@ let build_cm sctx ?sandbox ~dynlink ~flags ~cm_kind ~dep_graphs
              cmi exists and reads it instead of re-creating it, which
              could create a race condition. *)
           [ "-intf-suffix"
-          ; Filename.extension (Option.value_exn m.impl).name
+          ; Filename.extension (Atom.to_string (Option.value_exn m.impl).name)
           ],
           [Module.cm_file_unsafe m ~obj_dir Cmi],
           []
@@ -102,7 +103,7 @@ let build_cm sctx ?sandbox ~dynlink ~flags ~cm_kind ~dep_graphs
            ; A "-I"; Path obj_dir
            ; (match alias_module with
               | None -> S []
-              | Some (m : Module.t) -> As ["-open"; m.name])
+              | Some (m : Module.t) -> As ["-open"; Atom.to_string m.name])
            ; A "-o"; Target dst
            ; A "-c"; Ml_kind.flag ml_kind; Dep src
            ])))
@@ -142,10 +143,10 @@ let build_modules sctx ~dynlink ~js_of_ocaml ~flags ~scope ~dir ~obj_dir
     ; cmx = cmi_and_cmx_requires
     }
   in
-  String_map.iter
+  Sexp.Atom_map.iter
     (match alias_module with
      | None -> modules
-     | Some (m : Module.t) -> String_map.remove m.name modules)
+     | Some (m : Module.t) -> Sexp.Atom_map.remove m.name modules)
     ~f:(fun ~key:_ ~data:m ->
       build_module sctx m ~dynlink ~js_of_ocaml ~flags ~scope ~dir ~obj_dir
         ~dep_graphs ~requires ~alias_module)

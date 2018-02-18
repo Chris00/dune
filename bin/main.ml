@@ -3,6 +3,10 @@ open Import
 open Jbuilder_cmdliner.Cmdliner
 open Fiber.O
 
+module Atom = Sexp.Atom
+module Atom_set = Sexp.Atom_set
+module Atom_map = Sexp.Atom_map
+
 (* Things in src/ don't depend on cmdliner to speed up the bootstrap, so we set this
    reference here *)
 let () = suggest_function := Jbuilder_cmdliner.Cmdliner_suggest.value
@@ -488,16 +492,19 @@ let installed_libraries =
        let findlib = ctx.findlib in
        if na then begin
          let pkgs = Findlib.all_unavailable_packages findlib in
-         let longest = List.longest_map pkgs ~f:(fun na -> na.package) in
+         let longest = List.max_map pkgs
+                         ~f:(fun na -> Atom.length na.package) in
          let ppf = Format.std_formatter in
          List.iter pkgs ~f:(fun (na : Findlib.Package_not_available.t) ->
-           Format.fprintf ppf "%-*s -> %a@\n" longest na.package
+           Format.fprintf ppf "%-*s -> %a@\n" longest
+             (Atom.to_string na.package)
              Findlib.Package_not_available.explain na.reason);
          Format.pp_print_flush ppf ();
          Fiber.return ()
        end else begin
          let pkgs = Findlib.all_packages findlib in
-         let max_len = List.longest_map pkgs ~f:Findlib.Package.name in
+         let max_len = List.max_map pkgs
+                         ~f:(fun p -> Atom.length(Findlib.Package.name p)) in
          List.iter pkgs ~f:(fun pkg ->
            let ver =
              match Findlib.Package.version pkg with
@@ -505,7 +512,7 @@ let installed_libraries =
              | v  -> v
            in
            Printf.printf "%-*s (version: %s)\n" max_len
-             (Findlib.Package.name pkg) ver);
+             (Atom.to_string (Findlib.Package.name pkg)) ver);
          Fiber.return ()
        end)
   in
@@ -711,11 +718,11 @@ let clean =
   , Term.info "clean" ~doc ~man)
 
 let format_external_libs libs =
-  String_map.bindings libs
+  Atom_map.bindings libs
   |> List.map ~f:(fun (name, kind) ->
     match (kind : Build.lib_dep_kind) with
-    | Optional -> sprintf "- %s (optional)" name
-    | Required -> sprintf "- %s" name)
+    | Optional -> sprintf "- %s (optional)" (Atom.to_string name)
+    | Required -> sprintf "- %s" (Atom.to_string name))
   |> String.concat ~sep:"\n"
 
 let external_lib_deps =
@@ -747,8 +754,8 @@ let external_lib_deps =
                   | Some x -> x)
              in
              let externals =
-               String_map.filter lib_deps ~f:(fun name _ ->
-                 not (String_set.mem name internals))
+               Atom_map.filter lib_deps ~f:(fun name _ ->
+                 not (Atom_set.mem name internals))
              in
              if only_missing then begin
                let context =
@@ -757,12 +764,14 @@ let external_lib_deps =
                  | Some c -> c
                in
                let missing =
-                 String_map.filter externals ~f:(fun name _ ->
-                   not (Findlib.available context.findlib name))
+                 Atom_map.filter externals ~f:(fun name _ ->
+                     not (Findlib.available context.findlib
+                            (Atom.to_string name)))
                in
-               if String_map.is_empty missing then
+               if Atom_map.is_empty missing then
                  acc
-               else if String_map.for_all missing ~f:(fun _ kind -> kind = Build.Optional)
+               else if Atom_map.for_all missing
+                         ~f:(fun _ kind -> kind = Build.Optional)
                then begin
                  Format.eprintf
                    "@{<error>Error@}: The following libraries are missing \
@@ -779,11 +788,12 @@ let external_lib_deps =
                     Hint: try: opam install %s@."
                    context_name
                    (format_external_libs missing)
-                   (String_map.bindings missing
+                   (Atom_map.bindings missing
                     |> List.filter_map ~f:(fun (name, kind) ->
                       match (kind : Build.lib_dep_kind) with
                       | Optional -> None
-                      | Required -> Some (Findlib.root_package_name name))
+                      | Required -> Some (Findlib.root_package_name
+                                            (Atom.to_string name)))
                     |> String_set.of_list
                     |> String_set.elements
                     |> String.concat ~sep:" ");

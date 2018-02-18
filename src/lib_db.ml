@@ -1,10 +1,13 @@
 open Import
 open Jbuild
+module Atom = Sexp.Atom
+module Atom_set = Sexp.Atom_set
+module Atom_map = Sexp.Atom_map
 
 module FP = Findlib.Package
 
 type scope =
-  { mutable libs : Lib.Internal.t String_map.t
+  { mutable libs : Lib.Internal.t Atom_map.t
   ; scope        : Scope.t
   }
 
@@ -18,7 +21,7 @@ type t =
   ; (* This is to filter out libraries that are not installable because of
        missing dependencies. Keyed by the unique_library_name *)
     installable_internal_libs : Lib.Internal.t String_map.t
-  ; local_public_libs         : Path.t String_map.t
+  ; local_public_libs         : Path.t Atom_map.t
   ; anonymous_root            : Path.t
   ; by_scope_name             : (string, scope) Hashtbl.t
   }
@@ -30,8 +33,9 @@ let internal_name_scope t ~dir =
     | None ->
       if Path.is_root d || not (Path.is_local d) then (
         Sexp.code_error "Lib_db.Scope.internal_name_scope got an invalid path"
-          [ "dir", Path.sexp_of_t dir
-          ; "t.anonymous_root", Path.sexp_of_t t.anonymous_root ]
+          [ Sexp.Atom.unsafe_of_string "dir", Path.sexp_of_t dir
+          ; (Sexp.Atom.unsafe_of_string "t.anonymous_root",
+             Path.sexp_of_t t.anonymous_root) ]
       );
       let scope = loop (Path.parent d) in
       Hashtbl.add t.by_internal_name ~key:d ~data:scope;
@@ -45,14 +49,14 @@ type resolved_select =
 
 let unique_library_name t (lib : Lib.t) =
   match Lib.public_name lib with
-  | Some p -> p
+  | Some p -> Atom.to_string p
   | None ->
     let dir = Option.value_exn (Lib.src_dir lib) in
     let scope = internal_name_scope t ~dir in
     let name = Lib.best_name lib in
     match scope.scope.name with
-    | None -> name ^ "@"
-    | Some s -> name ^ "@" ^ s
+    | None -> Atom.to_string name ^ "@"
+    | Some s -> Atom.to_string name ^ "@" ^ s
 
 
 module Scope = struct
@@ -64,16 +68,16 @@ module Scope = struct
   let external_scope t =
     { lib_db = t
     ; scope =
-        { libs = String_map.empty
+        { libs = Atom_map.empty
         ; scope = Jbuild.Scope.empty
         }
     }
 
   let find_exn (t : t With_required_by.t) name =
-    match String_map.find name t.data.scope.libs with
+    match Atom_map.find name t.data.scope.libs with
     | Some l -> Lib.internal l
     | None ->
-      Hashtbl.find_or_add t.data.lib_db.by_public_name name
+      Hashtbl.find_or_add t.data.lib_db.by_public_name (Atom.to_string name)
         ~f:(fun name ->
           Lib.external_ (Findlib.find_exn t.data.lib_db.findlib name
                           ~required_by:t.required_by))
@@ -84,11 +88,12 @@ module Scope = struct
     | x -> Some x
 
   let find_internal (t : t With_required_by.t) name =
-    match String_map.find name t.data.scope.libs with
+    match Atom_map.find name t.data.scope.libs with
     | Some _ as some -> some
     | None ->
       let open Option.Infix in
-      Hashtbl.find t.data.lib_db.by_public_name name >>= Lib.get_internal
+      Hashtbl.find t.data.lib_db.by_public_name (Atom.to_string name)
+      >>= Lib.get_internal
 
   let lib_is_available (t : t With_required_by.t) name =
     match find_internal t name with
@@ -97,11 +102,11 @@ module Scope = struct
         (unique_library_name t.data.lib_db (Lib.internal lib))
         t.data.lib_db.installable_internal_libs
     | None ->
-      Findlib.available t.data.lib_db.findlib name
+      Findlib.available t.data.lib_db.findlib (Atom.to_string name)
 
   let choice_is_possible t { Lib_dep.required; forbidden; _ } =
-    String_set.for_all required  ~f:(fun name ->      lib_is_available t name ) &&
-    String_set.for_all forbidden ~f:(fun name -> not (lib_is_available t name))
+    Atom_set.for_all required  ~f:(fun name ->      lib_is_available t name ) &&
+    Atom_set.for_all forbidden ~f:(fun name -> not (lib_is_available t name))
 
   let dep_is_available t dep =
     match (dep : Lib_dep.t) with
@@ -122,11 +127,11 @@ module Scope = struct
     | Select { choices; loc; _ } ->
       match
         List.find_map choices ~f:(fun { required; forbidden; _ } ->
-          if String_set.exists forbidden ~f:(lib_is_available t) then
+          if Atom_set.exists forbidden ~f:(lib_is_available t) then
             None
           else
             match
-              List.map (String_set.elements required) ~f:(find_exn t)
+              List.map (Atom_set.elements required) ~f:(find_exn t)
             with
             | l           -> Some l
             | exception (Findlib.Findlib _) -> None)
@@ -208,7 +213,8 @@ module Scope = struct
         seen := String_set.add unique_id !seen;
         let acc = f lib acc ~required_by in
         let required_by =
-          With_required_by.Entry.Library (Lib.best_name lib) :: required_by
+          With_required_by.Entry.Library (Atom.to_string (Lib.best_name lib))
+          :: required_by
         in
         let requires = Lib.requires lib ~required_by in
         let scope =
@@ -228,7 +234,7 @@ module Scope = struct
 
   let all_ppx_runtime_deps_exn scope lib_deps =
     fold_transitive_closure scope lib_deps
-      ~init:String_set.empty ~f:(fun lib acc ~required_by ->
+      ~init:Atom_set.empty ~f:(fun lib acc ~required_by ->
         let rt_deps =
           let ppx_runtime_libraries =
             Lib.ppx_runtime_libraries lib ~required_by
@@ -236,12 +242,12 @@ module Scope = struct
           match Lib.src_dir lib with
           | Some dir ->
             let scope = lazy (find_scope scope.data.lib_db ~dir) in
-            String_set.map ppx_runtime_libraries ~f:(fun name ->
+            Atom_set.map ppx_runtime_libraries ~f:(fun name ->
               Lib.best_name (find_exn (Lazy.force scope) name))
           | None ->
             ppx_runtime_libraries
         in
-        String_set.union acc rt_deps)
+        Atom_set.union acc rt_deps)
 end
 
 let find_scope = Scope.find_scope
@@ -249,9 +255,9 @@ let find_scope = Scope.find_scope
 let local_public_libs t = t.local_public_libs
 
 module Local_closure = Top_closure.Make(struct
-    type t = Path.t * string
+    type t = Path.t * Atom.t
     let compare (p1, l1) (p2, l2) =
-      match String.compare l1 l2 with
+      match Atom.compare l1 l2 with
       | 0 -> Path.compare p1 p2
       | x -> x
   end)(struct
@@ -280,7 +286,8 @@ let compute_instalable_internal_libs t ~internal_libraries =
       let scope = find_scope t ~dir in
       if not lib.Library.optional ||
          (List.for_all (Library.all_lib_deps lib) ~f:(Scope.dep_is_available scope) &&
-          List.for_all lib.ppx_runtime_libraries  ~f:(Scope.lib_is_available scope))
+            List.for_all lib.ppx_runtime_libraries
+              ~f:(fun l -> Scope.lib_is_available scope l))
       then
         { t with
           installable_internal_libs =
@@ -293,10 +300,11 @@ let compute_instalable_internal_libs t ~internal_libraries =
 
 let create findlib ~scopes ~root internal_libraries =
   let local_public_libs =
-    List.fold_left internal_libraries ~init:String_map.empty ~f:(fun acc (dir, lib) ->
+    List.fold_left internal_libraries ~init:Atom_map.empty
+      ~f:(fun acc (dir, lib) ->
       match lib.Library.public with
       | None -> acc
-      | Some { name; _ } -> String_map.add acc ~key:name ~data:dir)
+      | Some { name; _ } -> Atom_map.add acc ~key:name ~data:dir)
   in
   let t =
     { findlib
@@ -311,7 +319,7 @@ let create findlib ~scopes ~root internal_libraries =
   (* Initializes the scopes, including [Path.root] so that when there are no <pkg>.opam
      files in parent directories, the scope is the whole workspace. *)
   List.iter scopes ~f:(fun (scope : Jbuild.Scope.t) ->
-    let lib_scope = { libs = String_map.empty; scope } in
+    let lib_scope = { libs = Atom_map.empty; scope } in
     Option.iter scope.name ~f:(fun name ->
       assert (name <> "");
       assert (not (Hashtbl.mem t.by_scope_name name));
@@ -323,18 +331,20 @@ let create findlib ~scopes ~root internal_libraries =
   Hashtbl.add t.by_scope_name ~key:"" ~data:anon_scope;
   List.iter internal_libraries ~f:(fun ((dir, lib) as internal) ->
     let scope = internal_name_scope t ~dir in
-    scope.libs <- String_map.add scope.libs ~key:lib.Library.name ~data:internal;
+    scope.libs <- Atom_map.add scope.libs ~key:lib.Library.name ~data:internal;
     Option.iter lib.public ~f:(fun { name; _ } ->
-      match Hashtbl.find t.by_public_name name with
+      match Hashtbl.find t.by_public_name (Atom.to_string name) with
       | None ->
-        Hashtbl.add t.by_public_name ~key:name ~data:(Lib.internal internal)
+         Hashtbl.add t.by_public_name ~key:(Atom.to_string name)
+           ~data:(Lib.internal internal)
       | Some lib ->
         (* We only populated this table with internal libraries, who always have
            source dir *)
         let dup_path = Option.value_exn (Lib.src_dir lib) in
         let internal_path d = Path.relative d "jbuild" in
         die "Libraries with identical public names %s defined in %a and %a."
-          name Path.pp (internal_path dir) Path.pp (internal_path dup_path)
+          (Atom.to_string name)
+          Path.pp (internal_path dir) Path.pp (internal_path dup_path)
     ));
   compute_instalable_internal_libs t ~internal_libraries
 

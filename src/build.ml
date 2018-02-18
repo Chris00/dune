@@ -1,4 +1,6 @@
 open Import
+module Atom_set = Sexp.Atom_set
+module Atom_map = Sexp.Atom_map
 
 module Pset = Path.Set
 
@@ -9,7 +11,7 @@ end
 type lib_dep_kind =
   | Optional
   | Required
-type lib_deps = lib_dep_kind String_map.t
+type lib_deps = lib_dep_kind Atom_map.t
 
 let merge_lib_dep_kind a b =
   match a, b with
@@ -71,7 +73,7 @@ include Repr
 let repr t = t
 
 let merge_lib_deps a b =
-  String_map.merge a b ~f:(fun _ a b ->
+  Atom_map.merge a b ~f:(fun _ a b ->
     match a, b with
     | None, None -> None
     | x, None | None, x -> x
@@ -89,9 +91,9 @@ let record_lib_deps ~kind lib_deps =
        | Jbuild.Lib_dep.Direct s -> [(s, kind)]
        | Select { choices; _ } ->
          List.concat_map choices ~f:(fun c ->
-           String_set.elements c.Jbuild.Lib_dep.required
+           Atom_set.elements c.Jbuild.Lib_dep.required
            |> List.map ~f:(fun d -> (d, Optional))))
-     |> String_map.of_alist_reduce ~f:merge_lib_dep_kind)
+     |> Atom_map.of_alist_reduce ~f:merge_lib_dep_kind)
 
 module O = struct
   let ( >>> ) a b =

@@ -1,6 +1,9 @@
 open Import
 open Fiber.O
 
+module Atom_set = Sexp.Atom_set
+module Atom_map = Sexp.Atom_map
+
 type setup =
   { build_system : Build_system.t
   ; stanzas      : (Path.t * Jbuild.Scope.t * Jbuild.Stanzas.t) list String_map.t
@@ -100,8 +103,8 @@ let external_lib_deps ?log ~packages () =
        Path.Map.map
          (Build_system.all_lib_deps setup.build_system
             ~request:(Build.paths install_files))
-         ~f:(String_map.filter ~f:(fun name _ ->
-           not (String_set.mem name internals))))
+         ~f:(Atom_map.filter ~f:(fun name _ ->
+           not (Atom_set.mem name internals))))
 
 let ignored_during_bootstrap =
   Path.Set.of_list

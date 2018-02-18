@@ -1,6 +1,8 @@
 open Import
 open Fiber.O
 
+module Atom = Sexp.Atom
+
 module Kind = struct
   module Opam = struct
     type t =
@@ -10,11 +12,15 @@ module Kind = struct
   end
   type t = Default | Opam of Opam.t
 
+  let atom_default = Sexp.Atom.of_string "default"
+  let atom_root = Sexp.Atom.of_string "root"
+  let atom_switch = Sexp.Atom.of_string "switch"
+
   let sexp_of_t : t -> Sexp.t = function
-    | Default -> Atom "default"
+    | Default -> Atom atom_default
     | Opam o  ->
-      Sexp.To_sexp.(record [ "root"  , atom o.root
-                           ; "switch", atom o.switch
+      Sexp.To_sexp.(record [ atom_root  , string o.root
+                           ; atom_switch, string o.switch
                            ])
 end
 
@@ -30,7 +36,7 @@ end
 module Env_var_map = Map.Make(Env_var)
 
 type t =
-  { name                    : string
+  { name                    : Atom.t
   ; kind                    : Kind.t
   ; merlin                  : bool
   ; for_host                : t option
@@ -88,29 +94,49 @@ type t =
   ; which_cache             : (string, Path.t option) Hashtbl.t
   }
 
+let atom_name = Sexp.Atom.of_string "name"
+let atom_kind = Sexp.Atom.of_string "kind"
+let atom_merlin = Sexp.Atom.of_string "merlin"
+let atom_for_host = Sexp.Atom.of_string "for_host"
+let atom_build_dir = Sexp.Atom.of_string "build_dir"
+let atom_toplevel_path = Sexp.Atom.of_string "toplevel_path"
+let atom_ocaml_bin = Sexp.Atom.of_string "ocaml_bin"
+let atom_ocaml = Sexp.Atom.of_string "ocaml"
+let atom_ocamlc = Sexp.Atom.of_string "ocamlc"
+let atom_ocamlopt = Sexp.Atom.of_string "ocamlopt"
+let atom_ocamldep = Sexp.Atom.of_string "ocamldep"
+let atom_ocamlmklib = Sexp.Atom.of_string "ocamlmklib"
+let atom_env = Sexp.Atom.of_string "env"
+let atom_findlib_path = Sexp.Atom.of_string "findlib_path"
+let atom_arch_sixtyfour = Sexp.Atom.of_string "arch_sixtyfour"
+let atom_natdynlink_supported = Sexp.Atom.of_string "natdynlink_supported"
+let atom_opam_vars = Sexp.Atom.of_string "opam_vars"
+let atom_ocamlc_config = Sexp.Atom.of_string "ocamlc_config"
+let atom_which = Sexp.Atom.of_string "which"
+
 let sexp_of_t t =
   let open Sexp.To_sexp in
   let path = Path.sexp_of_t in
   record
-    [ "name", atom t.name
-    ; "kind", Kind.sexp_of_t t.kind
-    ; "merlin", bool t.merlin
-    ; "for_host", option atom (Option.map t.for_host ~f:(fun t -> t.name))
-    ; "build_dir", path t.build_dir
-    ; "toplevel_path", option path t.toplevel_path
-    ; "ocaml_bin", path t.ocaml_bin
-    ; "ocaml", path t.ocaml
-    ; "ocamlc", path t.ocamlc
-    ; "ocamlopt", option path t.ocamlopt
-    ; "ocamldep", path t.ocamldep
-    ; "ocamlmklib", path t.ocamlmklib
-    ; "env", list (pair atom atom) (Env_var_map.bindings t.env_extra)
-    ; "findlib_path", list path (Findlib.path t.findlib)
-    ; "arch_sixtyfour", bool t.arch_sixtyfour
-    ; "natdynlink_supported", bool t.natdynlink_supported
-    ; "opam_vars", atom_hashtbl atom t.opam_var_cache
-    ; "ocamlc_config", list (pair atom atom) t.ocamlc_config
-    ; "which", atom_hashtbl (option path) t.which_cache
+    [ atom_name, atom t.name
+    ; atom_kind, Kind.sexp_of_t t.kind
+    ; atom_merlin, bool t.merlin
+    ; atom_for_host, option atom (Option.map t.for_host ~f:(fun t -> t.name))
+    ; atom_build_dir, path t.build_dir
+    ; atom_toplevel_path, option path t.toplevel_path
+    ; atom_ocaml_bin, path t.ocaml_bin
+    ; atom_ocaml, path t.ocaml
+    ; atom_ocamlc, path t.ocamlc
+    ; atom_ocamlopt, option path t.ocamlopt
+    ; atom_ocamldep, path t.ocamldep
+    ; atom_ocamlmklib, path t.ocamlmklib
+    ; atom_env, list (pair string string) (Env_var_map.bindings t.env_extra)
+    ; atom_findlib_path, list path (Findlib.path t.findlib)
+    ; atom_arch_sixtyfour, bool t.arch_sixtyfour
+    ; atom_natdynlink_supported, bool t.natdynlink_supported
+    ; atom_opam_vars, atom_hashtbl string t.opam_var_cache
+    ; atom_ocamlc_config, list (pair string string) t.ocamlc_config
+    ; atom_which, atom_hashtbl (option path) t.which_cache
     ]
 
 let compare a b = compare a.name b.name
@@ -187,7 +213,7 @@ let create ~(kind : Kind.t) ~path ~base_env ~env_extra ~name ~merlin
      Hashtbl.add opam_var_cache ~key:"root" ~data:root
    | Default -> ());
   let prog_not_found_in_path prog =
-    Utils.program_not_found prog ~context:name
+    Utils.program_not_found prog ~context:(Atom.to_string name)
   in
   let which_cache = Hashtbl.create 128 in
   let which x = which ~cache:which_cache ~path x in
@@ -237,7 +263,7 @@ let create ~(kind : Kind.t) ~path ~base_env ~env_extra ~name ~merlin
     let dir = Path.parent ocamlc in
     let ocaml_tool_not_found prog =
       die "ocamlc found in %s, but %s/%s doesn't exist (context: %s)"
-        (Path.to_string dir) (Path.to_string dir) prog name
+        (Path.to_string dir) (Path.to_string dir) prog (Atom.to_string name)
     in
     let get_ocaml_tool prog =
       match get_tool_using_findlib_config prog with
@@ -250,7 +276,8 @@ let create ~(kind : Kind.t) ~path ~base_env ~env_extra ~name ~merlin
       | Some fn -> fn
     in
 
-    let build_dir = Path.of_string (sprintf "_build/%s" name) in
+    let build_dir =
+      Path.of_string (sprintf "_build/%s" (Atom.to_string name)) in
     let ocamlc_config_cmd = sprintf "%s -config" (Path.to_string ocamlc) in
     let findlib_path () =
       if use_findlib then
@@ -444,7 +471,8 @@ let create ~(kind : Kind.t) ~path ~base_env ~env_extra ~name ~merlin
   Fiber.parallel_map targets ~f:(function
     | Native -> Fiber.return None
     | Named findlib_toolchain ->
-      let name = sprintf "%s.%s" name findlib_toolchain in
+      let name = Atom.unsafe_of_string
+                   (sprintf "%s.%s" (Atom.to_string name) findlib_toolchain) in
       create_one () ~implicit:false ~name ~findlib_toolchain ~host:native
         ~merlin:false
       >>| fun x -> Some x)
@@ -465,7 +493,7 @@ let default ?(merlin=true) ?(use_findlib=true) ~targets () =
     | None -> []
   in
   create ~kind:Default ~path ~base_env:env ~env_extra:Env_var_map.empty
-    ~name:"default" ~merlin ~use_findlib ~targets ()
+    ~name:(Atom.unsafe_of_string "default") ~merlin ~use_findlib ~targets ()
 
 let create_for_opam ?root ~targets ~switch ~name ?(merlin=false) () =
   match Bin.opam with

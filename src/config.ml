@@ -35,7 +35,8 @@ module Display = struct
       ; "quiet"    , Quiet
       ]
 
-  let t = enum all
+  let t = enum (List.map all ~f:(fun (s,t) ->
+                    (Sexp.Atom.unsafe_of_string s), t))
 end
 
 module type S = sig
@@ -65,11 +66,14 @@ let default =
   ; concurrency = 4
   }
 
+let atom_display = Sexp.Atom.of_string "display"
+let atom_jobs = Sexp.Atom.of_string "jobs"
+
 let t =
   record
-    (field "display" Display.t ~default:default.display
+    (field atom_display Display.t ~default:default.display
      >>= fun display ->
-     field "jobs" int ~default:default.concurrency
+     field atom_jobs int ~default:default.concurrency
      >>= fun concurrency ->
      return { display
             ; concurrency
